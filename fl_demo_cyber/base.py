@@ -1,7 +1,7 @@
 """
-project_name base module.
+fl_demo_cyber base module.
 
-This is the principal module of the project_name project.
+This is the principal module of the fl_demo_cyber project.
 here you put your main classes and objects.
 
 Be creative! do whatever you want!
@@ -14,4 +14,4 @@ and then choose `flask` as template.
 """
 
 # example constant variable
-NAME = "project_name"
+NAME = "fl_demo_cyber"

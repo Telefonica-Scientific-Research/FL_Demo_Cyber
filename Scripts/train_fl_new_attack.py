@@ -23,11 +23,17 @@ FedAvg (baseline)
     Standard weighted-average aggregation proportional to local dataset sizes.
     The discoverer's new knowledge is diluted by the other clients.
 
-FedDiv (Divergence-Weighted FedAvg)
-    After each round each client's effective weight is proportional to the L2
-    distance between its local model and the current global model.  Clients
-    that diverge more automatically gain more influence — so the discoverer's
-    signal amplifies itself without any hand-tuned boost factor.
+FedDiv (Power-Weighted Divergence FedAvg)
+    After each round each client's effective weight is proportional to the
+    p-th power of the L2 distance between its local model and the current
+    global model:
+
+        w_i  ∝  ||w_i_local − w_global||₂^p
+
+    p=1 (linear): mild amplification of divergent clients.
+    p=2 (quadratic, default): if client 0 has 10× higher divergence than
+         the mean of others, it captures ~96 % of the aggregate weight
+         instead of ~71 % with p=1 — propagating its new knowledge faster.
 
 Data partitioning
 -----------------
@@ -341,24 +347,24 @@ class FedAvgStrategy(FedAvg):
 
 class FedDivStrategy(FedAvg):
     """
-    Divergence-Weighted FedAvg.
+    Power-Weighted Divergence FedAvg (FedDiv).
 
-    Each round the contribution of client i is proportional to the L2
-    distance between its locally trained model and the current global model:
+    Each round client i's effective contribution is proportional to:
 
-        effective_weight_i  ∝  ||w_i_local − w_global||₂
+        ||w_i_local − w_global||₂^p
 
-    This is self-organising: when Client 0 absorbs the large discovery pool,
-    its model diverges noticeably and automatically receives more influence
-    in aggregation — no hand-tuned boost factor required.
+    With p=2 (default) the most divergent client dominates aggregation
+    far more aggressively than with linear (p=1) weighting.  This maximises
+    the influence of the node that first encounters the new attack pattern.
     """
 
     def __init__(self, discovery_client_id, discovery_round,
-                 proximal_mu=0.0, **kwargs):
+                 proximal_mu=0.0, div_power=2, **kwargs):
         super().__init__(**kwargs)
         self.discovery_client_id = int(discovery_client_id)
         self.discovery_round     = int(discovery_round)
         self.proximal_mu         = float(proximal_mu)
+        self.div_power           = float(div_power)
         init_params = kwargs.get("initial_parameters")
         self._global_ndarrays = (parameters_to_ndarrays(init_params)
                                  if init_params is not None else None)
@@ -394,13 +400,15 @@ class FedDivStrategy(FedAvg):
             )))
             divergences.append(max(div, 1e-8))
 
-        total_div = sum(divergences)
-        total_n   = sum(r.num_examples for _, r in results)
+        # Raise each divergence to the configured power (default p=2)
+        powered = [d ** self.div_power for d in divergences]
+        total_powered = sum(powered)
+        total_n       = sum(r.num_examples for _, r in results)
 
-        # Re-weight: each client's share ∝ its divergence
+        # Re-weight: each client's share ∝ divergence^p
         boosted = []
-        for (proxy, fit_res), div in zip(results, divergences):
-            effective_n = max(int(round((div / total_div) * total_n)), 1)
+        for (proxy, fit_res), pw in zip(results, powered):
+            effective_n = max(int(round((pw / total_powered) * total_n)), 1)
             boosted.append((proxy, dc_replace(fit_res, num_examples=effective_n)))
 
         agg = super().aggregate_fit(server_round, boosted, failures)
@@ -531,13 +539,15 @@ def run(args):
 
     # ─── Run 2: FedDiv ────────────────────────────────────────────────────
     log.info("\n" + "=" * 70)
-    log.info("STRATEGY 2/2 : FedDiv  (divergence-weighted, mu=%.4f)", args.mu)
+    log.info("STRATEGY 2/2 : FedDiv  (divergence^%.0f weighted, mu=%.4f)",
+             args.div_power, args.mu)
     log.info("=" * 70)
 
     feddiv_strategy = FedDivStrategy(
         discovery_client_id=args.discovery_client,
         discovery_round=args.discovery_round,
         proximal_mu=args.mu,
+        div_power=args.div_power,
         **common_kwargs,
     )
     feddiv_metrics, feddiv_params = _run_strategy(
@@ -567,6 +577,7 @@ def run(args):
             "rounds":           args.rounds,
             "local_epochs":     args.local_epochs,
             "mu":               args.mu,
+            "div_power":        args.div_power,
             "sample_frac":      args.sample_frac,
             "server_frac":      args.server_frac,
         },
@@ -602,6 +613,8 @@ def _generate_figures(results):
     cfg         = results["config"]
     target_name = cfg["target_attack"]
     disc_rnd    = cfg["discovery_round"]
+    div_power   = cfg.get("div_power", 2)
+    fd_label    = f"FedDiv (p={div_power:.0f})"
     class_names = results["class_names"]
 
     fa = results["fedavg"]["per_round_metrics"]
@@ -631,7 +644,7 @@ def _generate_figures(results):
     ax.plot(rounds, fa_tgt, "o-", color="#2196F3", lw=2.2, ms=5,
             label="FedAvg — target F1")
     ax.plot(rounds, fd_tgt, "s-", color="#F44336", lw=2.2, ms=5,
-            label="FedDiv — target F1")
+            label=f"{fd_label} — target F1")
     ax.axvline(disc_rnd + 0.5, color="#212121", lw=1.8, ls="--", zorder=5)
     y_ann = max(max(fa_tgt), max(fd_tgt)) * 0.55
     ax.annotate(
@@ -661,11 +674,11 @@ def _generate_figures(results):
     ax2.plot(rounds, fa_macro, "o-",  color="#2196F3", lw=1.8, ms=4,
              label="FedAvg Macro F1")
     ax2.plot(rounds, fd_macro, "s-",  color="#F44336", lw=1.8, ms=4,
-             label="FedDiv Macro F1")
+             label=f"{fd_label} Macro F1")
     ax2.plot(rounds, fa_acc,   "--",  color="#2196F3", lw=1.2, alpha=0.6,
              label="FedAvg Accuracy")
     ax2.plot(rounds, fd_acc,   "--",  color="#F44336", lw=1.2, alpha=0.6,
-             label="FedDiv Accuracy")
+             label=f"{fd_label} Accuracy")
     ax2.axvline(disc_rnd + 0.5, color="#212121", lw=1.8, ls="--")
     ax2.axvspan(0.5, disc_rnd + 0.5, alpha=0.06, color="#F44336")
     ax2.axvspan(disc_rnd + 0.5, max(rounds) + 0.5, alpha=0.06, color="#4CAF50")
@@ -696,7 +709,7 @@ def _generate_figures(results):
             label="FedAvg (round 20)", zorder=3)
     ax.barh(y_pos + bar_h / 2, fd_sorted, bar_h,
             color="#F4433650", edgecolor="#F44336", lw=1.2,
-            label="FedDiv (round 20)", zorder=3)
+            label=f"{fd_label} (round 20)", zorder=3)
 
     ax.axhspan(tgt_row - 0.5, tgt_row + 0.5, alpha=0.10,
                color="#FF9800", zorder=0)
@@ -709,7 +722,7 @@ def _generate_figures(results):
     ax.set_xlim(0, 1.15)
     ax.set_xlabel("F1 Score (server evaluation set)", fontsize=11)
     ax.set_title(
-        f"Per-Class F1 at Round {max(rounds)} — FedAvg vs FedDiv\n"
+        f"Per-Class F1 at Round {max(rounds)} — FedAvg vs {fd_label}\n"
         f"Target: '{target_name}' | discovery at round {disc_rnd}",
         fontsize=12, fontweight="bold",
     )
@@ -750,6 +763,9 @@ def _parse_args():
     p.add_argument("--lr",               type=float, default=5e-4)
     p.add_argument("--mu",               type=float, default=0.0,
                    help="FedProx mu (0.0 = disabled, full client divergence).")
+    p.add_argument("--div-power",        type=float, default=2.0,
+                   help="Exponent for FedDiv divergence weighting (1=linear, "
+                        "2=quadratic default, higher = winner-takes-most).")
     p.add_argument("--sample-frac",      type=float, default=0.3)
     p.add_argument("--server-frac",      type=float, default=0.10)
     return p.parse_args()

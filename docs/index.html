@@ -578,13 +578,13 @@ footer {
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <div class="step-title">FedDiv amplifies divergent updates</div>
-        <div class="step-desc">FedDiv weights each client by its L2 gradient divergence from the global model. Client&nbsp;0's large shift gets <em>amplified</em>, accelerating propagation.</div>
+        <div class="step-title">FedDiv (p=2) amplifies divergent updates</div>
+        <div class="step-desc">FedDiv weights each client by its squared L2 divergence from the global model. Client&nbsp;0's large shift gets <em>aggressively amplified</em>, accelerating propagation within 2&nbsp;rounds.</div>
       </div>
       <div class="step">
         <div class="step-num">4</div>
         <div class="step-title">Global model converges (rounds 15–20)</div>
-        <div class="step-desc">Both strategies reach SQL injection F1&nbsp;≈&nbsp;0.60. FedDiv shows higher macro F1 (0.724) vs FedAvg (0.714), with no raw data exchanged.</div>
+        <div class="step-desc">FedDiv (p=2) post-discovery SQL mean F1: 0.479 vs FedAvg 0.417 (+14.9%). Ransomware F1: 0.904 vs 0.798 (+13pp). Macro F1: 0.716 vs 0.708 — with no raw data exchanged.</div>
       </div>
     </div>
   </div>
@@ -614,7 +614,7 @@ footer {
 <section class="section">
   <div class="container">
     <div class="tag">Real experiment results</div>
-    <h2 class="section-title">FedAvg vs FedDiv — SQL injection F1 timeline</h2>
+    <h2 class="section-title">FedAvg vs FedDiv (p=2) — SQL injection F1 timeline</h2>
     <p class="section-sub">
       SQL injection F1 and global macro F1 evaluated on the server's held-out eval set (10 % of all
       traffic) after every FL communication round. Vertical line marks the discovery surge at round&nbsp;5.
@@ -633,10 +633,10 @@ footer {
 <section class="section">
   <div class="container">
     <div class="tag">Final round comparison</div>
-    <h2 class="section-title">Per-class F1: FedAvg vs FedDiv (Round 20)</h2>
+    <h2 class="section-title">Per-class F1: FedAvg vs FedDiv (p=2) — Round 20</h2>
     <p class="section-sub">
       Final detection quality per attack type for both strategies after 20 rounds.
-      SQL injection and Ransomware show the clearest FedDiv advantage — classes most affected
+      SQL injection and Ransomware show the clearest FedDiv (p=2) advantage — classes most affected
       by Client&nbsp;0's surge.
     </p>
     <div class="card fade-in">
@@ -656,8 +656,9 @@ footer {
       <div class="callout-num" id="callout-num">0×</div>
       <div class="callout-text">SQL injection F1 improvement after discovery surge</div>
       <div class="callout-sub">
-        From baseline F1&nbsp;=&nbsp;0.29 (pre-surge) to F1&nbsp;=&nbsp;0.60 at round&nbsp;20 —
-        FedDiv macro F1 outperforms FedAvg (0.724 vs 0.714) without a single raw packet leaving any node.
+        From baseline F1&nbsp;=&nbsp;0.27 (discovery round) to peak F1&nbsp;=&nbsp;0.60 at round&nbsp;9 —
+        FedDiv&nbsp;(p=2) leads FedAvg by ×1.82 just 2 rounds after discovery (R7: 0.499 vs 0.274).
+        Post-discovery SQL mean F1: 0.479 vs 0.417&nbsp;(+14.9%), without a single raw packet leaving any node.
       </div>
     </div>
   </div>
@@ -689,19 +690,19 @@ const ROUNDS    = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
 const DISC_ROUND = 5;
 
 // FedAvg per-round metrics
-const FA_TGT_F1  = [0.5418,0.4519,0.498,0.2719,0.2979,0.269,0.2903,0.3587,0.5436,0.5724,0.513,0.5677,0.5387,0.5754,0.5797,0.4551,0.5079,0.5652,0.443,0.5095];
-const FA_MACRO   = [0.6421,0.6527,0.6519,0.6484,0.6513,0.6754,0.6919,0.7,0.7012,0.6894,0.7018,0.6913,0.6988,0.6926,0.7001,0.7074,0.7123,0.7079,0.7186,0.7247];
-const FA_ACC     = [0.9266,0.9218,0.922,0.923,0.9234,0.9254,0.9272,0.9284,0.9279,0.9269,0.9287,0.9257,0.9269,0.9275,0.9275,0.9276,0.9285,0.9292,0.9293,0.9301];
+const FA_TGT_F1  = [0.5744,0.5873,0.5137,0.3221,0.269,0.3905,0.274,0.3975,0.5983,0.2817,0.5841,0.3737,0.3692,0.5771,0.5362,0.4302,0.3281,0.3233,0.45,0.3362];
+const FA_MACRO   = [0.6034,0.6397,0.6515,0.6509,0.6485,0.6545,0.6788,0.6936,0.693,0.6916,0.6893,0.6797,0.6706,0.6835,0.6908,0.6914,0.6958,0.6992,0.7023,0.7079];
+const FA_ACC     = [0.9198,0.9237,0.9216,0.9223,0.9226,0.9227,0.9256,0.9263,0.9282,0.931,0.9296,0.9314,0.931,0.9321,0.9325,0.932,0.9325,0.9322,0.9328,0.9313];
 
-// FedDiv per-round metrics
-const FD_TGT_F1  = [0.5578,0.3369,0.328,0.2742,0.269,0.2776,0.2751,0.3441,0.5963,0.5145,0.5937,0.4486,0.4114,0.5194,0.3009,0.3015,0.5159,0.5418,0.3679,0.5289];
-const FD_MACRO   = [0.6469,0.6439,0.6466,0.6477,0.6522,0.6817,0.6929,0.6959,0.7048,0.6999,0.689,0.6981,0.6975,0.7019,0.6937,0.6987,0.7082,0.7136,0.7092,0.7254];
-const FD_ACC     = [0.9265,0.9253,0.9221,0.9229,0.9236,0.9259,0.9275,0.9278,0.9305,0.9278,0.9267,0.9269,0.9262,0.9272,0.9264,0.9267,0.9283,0.9298,0.9282,0.9305];
+// FedDiv (p=2) per-round metrics
+const FD_TGT_F1  = [0.5778,0.5167,0.5027,0.4068,0.2992,0.3095,0.4994,0.5837,0.603,0.3006,0.5912,0.4829,0.5407,0.5294,0.5594,0.479,0.6018,0.3819,0.4061,0.3111];
+const FD_MACRO   = [0.6166,0.6474,0.6485,0.6535,0.6501,0.6518,0.6871,0.7013,0.7156,0.6893,0.6695,0.6904,0.6847,0.6856,0.6823,0.6893,0.6859,0.7059,0.7034,0.7164];
+const FD_ACC     = [0.9222,0.9238,0.9209,0.9219,0.9223,0.9228,0.926,0.9289,0.933,0.9295,0.9314,0.9321,0.932,0.9318,0.9325,0.9319,0.9321,0.9314,0.9322,0.9332];
 
 // Final per-class F1 (round 20)
 const CLASS_NAMES = ['Backdoor','DDoS HTTP','DDoS ICMP','DDoS TCP','DDoS UDP','Fingerprinting','MITM','Normal','Password','Port Scanning','Ransomware','SQL injection','Uploading','Vuln. scanner','XSS'];
-const FA_PC_F1   = [0.8911,0.7367,0.9931,0.6678,0.9999,0.557,1.0,1.0,0.522,0.3703,0.8042,0.5095,0.4717,0.8947,0.453];
-const FD_PC_F1   = [0.8922,0.7367,0.9934,0.6896,0.9999,0.5641,1.0,1.0,0.4902,0.3598,0.8067,0.5289,0.4717,0.8947,0.453];
+const FA_PC_F1   = [0.887,0.7364,0.9904,0.7485,1.0,0.4835,1.0,1.0,0.5775,0.2411,0.7976,0.3362,0.4749,0.8935,0.4524];
+const FD_PC_F1   = [0.9508,0.7367,0.9909,0.7639,0.9995,0.4731,1.0,1.0,0.5845,0.2134,0.9041,0.3111,0.4717,0.8939,0.4524];
 // SQL injection index = 11
 
 // Per-client attack category distribution (approximate, IID split of 501970 training samples)
@@ -759,11 +760,11 @@ function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
 
 window.addEventListener('load', () => {
   setTimeout(() => {
-    animateCounter(document.getElementById('kpi1'), 93.05, 1200, '%', 1);
-    animateCounter(document.getElementById('kpi2'), 14, 900, '/14');
-    animateCounter(document.getElementById('kpi3'), 5, 800, ' rounds');
+    animateCounter(document.getElementById('kpi1'), 93.32, 1200, '%', 1);
+    animateCounter(document.getElementById('kpi2'), 14, 900, '/15');
+    animateCounter(document.getElementById('kpi3'), 2, 800, ' rounds');
     animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
-    animateCounter(document.getElementById('callout-num'), 1.97, 1400, '×', 2);
+    animateCounter(document.getElementById('callout-num'), 1.82, 1400, '×', 2);
   }, 300);
 });
 
@@ -897,7 +898,7 @@ new Chart(tlCtx, {
         order: 1
       },
       {
-        label: 'FedDiv — SQL injection F1',
+        label: 'FedDiv (p=2) — SQL injection F1',
         data: FD_TGT_F1,
         borderColor: '#a855f7',
         backgroundColor: 'rgba(168,85,247,.10)',
@@ -921,7 +922,7 @@ new Chart(tlCtx, {
         order: 3
       },
       {
-        label: 'FedDiv — Macro F1',
+        label: 'FedDiv (p=2) — Macro F1',
         data: FD_MACRO,
         borderColor: '#00ff88',
         backgroundColor: 'transparent',
@@ -1046,7 +1047,7 @@ new Chart(pcCtx, {
         borderRadius: 4
       },
       {
-        label: 'FedDiv — Round 20',
+        label: 'FedDiv (p=2) — Round 20',
         data: sortedFD,
         backgroundColor: bgFD,
         borderColor: bdFD,

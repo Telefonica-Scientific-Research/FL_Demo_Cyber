@@ -454,6 +454,17 @@ footer {
 .divider { height: 1px; background: var(--border); margin: 0; }
 
 /* ── Responsive ─────────────────────────────────────────────────── */
+.hero-slogan {
+  margin-top: 28px;
+  font-size: clamp(.9rem, 2vw, 1.05rem);
+  color: var(--green);
+  text-align: center;
+  letter-spacing: .02em;
+  text-shadow: 0 0 14px rgba(0,255,136,.4);
+  font-weight: 500;
+}
+.hero-slogan em { font-style: normal; text-decoration: underline; text-underline-offset: 3px; }
+
 @media(max-width:768px) {
   .hero { padding: 60px 0 48px; }
   .kpi-row { grid-template-columns: 1fr 1fr; }
@@ -504,7 +515,7 @@ footer {
       </div>
       <div class="kpi kpi-g">
         <div class="kpi-value" id="kpi2">0</div>
-        <div class="kpi-label">Attack classes detected</div>
+        <div class="kpi-label">Attack types detected</div>
       </div>
       <div class="kpi kpi-o">
         <div class="kpi-value" id="kpi3">0</div>
@@ -515,6 +526,7 @@ footer {
         <div class="kpi-label">Clients — no raw data shared</div>
       </div>
     </div>
+    <p class="hero-slogan">⚡ F1&nbsp;=&nbsp;1.00 on normal traffic &mdash; your legitimate users are <em>never</em> flagged.</p>
   </div>
 </section>
 
@@ -748,7 +760,7 @@ function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
 window.addEventListener('load', () => {
   setTimeout(() => {
     animateCounter(document.getElementById('kpi1'), 93.03, 1200, '%', 1);
-    animateCounter(document.getElementById('kpi2'), 15, 900, '/15');
+    animateCounter(document.getElementById('kpi2'), 14, 900, '/14');
     animateCounter(document.getElementById('kpi3'), 5, 800, ' rounds');
     animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
     animateCounter(document.getElementById('callout-num'), 2.07, 1400, '×', 2);

@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FL CyberShield — Zero-Day Discovery Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+/* ── Reset & base ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #070b14;
+  --bg2:      #0d1424;
+  --bg3:      #111a2e;
+  --border:   #1e3060;
+  --cyan:     #00e5ff;
+  --cyan2:    #0090a8;
+  --green:    #00ff88;
+  --orange:   #ff6b35;
+  --red:      #ff3860;
+  --purple:   #a855f7;
+  --text:     #c8d8f0;
+  --text2:    #7a9cc4;
+  --glow-c:   0 0 18px rgba(0,229,255,.35);
+  --glow-g:   0 0 18px rgba(0,255,136,.35);
+  --glow-o:   0 0 18px rgba(255,107,53,.35);
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Utility ────────────────────────────────────────────────────── */
+.container { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+.section { padding: 64px 0; }
+.section-title {
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+.section-sub {
+  font-size: .95rem;
+  color: var(--text2);
+  margin-bottom: 40px;
+}
+.tag {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: rgba(0,229,255,.12);
+  color: var(--cyan);
+  border: 1px solid rgba(0,229,255,.3);
+  margin-bottom: 14px;
+}
+
+/* ── Glass card ─────────────────────────────────────────────────── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0,229,255,.03) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+/* ── Nav ────────────────────────────────────────────────────────── */
+nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(7,11,20,.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+}
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.nav-logo .dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: var(--glow-g);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .5; transform: scale(1.4); }
+}
+.nav-badge {
+  font-size: .72rem;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────── */
+.hero {
+  padding: 90px 0 72px;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,100,200,.18) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 50%, rgba(0,229,255,.07) 0%, transparent 60%);
+}
+.hero-eyebrow { margin-bottom: 18px; }
+.hero h1 {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.15;
+  margin-bottom: 20px;
+  letter-spacing: -.02em;
+}
+.hero h1 span {
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-desc {
+  font-size: 1.1rem;
+  color: var(--text2);
+  max-width: 680px;
+  margin-bottom: 48px;
+}
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 0;
+}
+.kpi {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 24px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 14px 14px 0 0;
+}
+.kpi.kpi-c::after  { background: linear-gradient(90deg, var(--cyan), var(--cyan2)); }
+.kpi.kpi-g::after  { background: linear-gradient(90deg, var(--green), #00cc66); }
+.kpi.kpi-o::after  { background: linear-gradient(90deg, var(--orange), #cc4400); }
+.kpi.kpi-p::after  { background: linear-gradient(90deg, var(--purple), #7030d0); }
+.kpi-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-label { font-size: .8rem; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; }
+
+/* ── Scenario diagram ───────────────────────────────────────────── */
+.scenario-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 40px 0;
+}
+.clients-row {
+  display: flex;
+  gap: clamp(12px, 3vw, 32px);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.client-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+.client-icon {
+  width: 64px; height: 64px;
+  border-radius: 14px;
+  background: var(--bg3);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  transition: all .3s;
+  position: relative;
+}
+.client-node.discoverer .client-icon {
+  border-color: var(--orange);
+  box-shadow: var(--glow-o);
+  animation: discoverer-pulse 2.5s ease-in-out infinite;
+}
+@keyframes discoverer-pulse {
+  0%,100% { box-shadow: 0 0 8px rgba(255,107,53,.4); }
+  50%      { box-shadow: 0 0 28px rgba(255,107,53,.8), 0 0 50px rgba(255,107,53,.3); }
+}
+.client-icon .badge-zd {
+  position: absolute;
+  top: -8px; right: -8px;
+  background: var(--orange);
+  color: #fff;
+  font-size: .55rem;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 6px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.client-label { font-size: .75rem; color: var(--text2); text-align: center; }
+.client-label strong { color: #fff; display: block; font-size: .82rem; }
+
+.connector-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0 5%;
+  position: relative;
+  height: 80px;
+}
+.connector-svg { width: 100%; height: 80px; overflow: visible; }
+
+.server-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.server-icon {
+  width: 80px; height: 80px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(0,229,255,.15), rgba(0,100,200,.1));
+  border: 2px solid var(--cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  box-shadow: var(--glow-c);
+}
+.server-label { font-size: .8rem; color: var(--text2); text-align: center; }
+.server-label strong { color: var(--cyan); display: block; font-size: .9rem; }
+
+/* ── Client cards grid ──────────────────────────────────────────── */
+.clients-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+.client-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .3s, box-shadow .3s;
+}
+.client-card:hover {
+  border-color: rgba(0,229,255,.4);
+  box-shadow: 0 0 20px rgba(0,229,255,.1);
+}
+.client-card.discoverer {
+  border-color: var(--orange);
+  box-shadow: 0 0 20px rgba(255,107,53,.15);
+}
+.client-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.client-card-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+.client-card.discoverer .client-card-icon {
+  border-color: var(--orange);
+  background: rgba(255,107,53,.1);
+}
+.client-card-name { font-weight: 600; color: #fff; font-size: .9rem; }
+.client-card-sub  { font-size: .72rem; color: var(--text2); }
+.client-chart-wrap { height: 130px; position: relative; }
+.client-sample-count {
+  text-align: center;
+  font-size: .72rem;
+  color: var(--text2);
+  margin-top: 8px;
+}
+.no-sql-badge {
+  display: inline-block;
+  font-size: .62rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255,56,96,.12);
+  color: var(--red);
+  border: 1px solid rgba(255,56,96,.3);
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.sql-discovered-badge {
+  display: inline-block;
+  font-size: .62rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255,107,53,.15);
+  color: var(--orange);
+  border: 1px solid rgba(255,107,53,.4);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* ── Timeline chart ─────────────────────────────────────────────── */
+.timeline-wrap {
+  position: relative;
+  height: 360px;
+}
+
+/* ── Per-class chart ────────────────────────────────────────────── */
+.perclass-wrap { position: relative; height: 480px; }
+
+/* ── Discovery callout ──────────────────────────────────────────── */
+.callout {
+  background: linear-gradient(135deg, rgba(0,229,255,.08), rgba(0,100,200,.05));
+  border: 1px solid rgba(0,229,255,.25);
+  border-radius: 20px;
+  padding: 40px 48px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.callout::before {
+  content: '';
+  position: absolute;
+  top: -40%; left: 50%;
+  transform: translateX(-50%);
+  width: 400px; height: 300px;
+  background: radial-gradient(ellipse, rgba(0,229,255,.12), transparent 70%);
+  pointer-events: none;
+}
+.callout-num {
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--cyan), var(--green));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.callout-text {
+  font-size: clamp(1rem, 2.5vw, 1.4rem);
+  color: #fff;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.callout-sub { color: var(--text2); font-size: .95rem; max-width: 560px; margin: 0 auto; }
+
+/* ── Steps ──────────────────────────────────────────────────────── */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+  margin-top: 40px;
+}
+.step {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  position: relative;
+}
+.step-num {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--cyan2), rgba(0,100,200,.5));
+  border: 1px solid var(--cyan);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8rem;
+  font-weight: 700;
+  color: var(--cyan);
+  margin-bottom: 12px;
+}
+.step-title { font-weight: 600; color: #fff; margin-bottom: 6px; font-size: .9rem; }
+.step-desc  { font-size: .8rem; color: var(--text2); }
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 0;
+  text-align: center;
+}
+.footer-logo { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 8px; }
+.footer-sub  { font-size: .8rem; color: var(--text2); }
+.footer-links { margin-top: 16px; display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+.footer-links a {
+  font-size: .82rem;
+  color: var(--text2);
+  text-decoration: none;
+  transition: color .2s;
+}
+.footer-links a:hover { color: var(--cyan); }
+
+/* ── Divider ────────────────────────────────────────────────────── */
+.divider { height: 1px; background: var(--border); margin: 0; }
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+@media(max-width:768px) {
+  .hero { padding: 60px 0 48px; }
+  .kpi-row { grid-template-columns: 1fr 1fr; }
+  .callout { padding: 32px 24px; }
+}
+@media(max-width:480px) {
+  .kpi-row { grid-template-columns: 1fr; }
+}
+
+/* ── Animated entry ─────────────────────────────────────────────── */
+.fade-in {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity .6s ease, transform .6s ease;
+}
+.fade-in.visible { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════ NAV ══════════════════════════════════ -->
+<nav>
+  <div class="container nav-inner">
+    <a class="nav-logo" href="#">
+      <span class="dot"></span>
+      FL CyberShield
+    </a>
+    <span class="nav-badge">LIVE DEMO — Edge-IIoTset · 2.2M events</span>
+  </div>
+</nav>
+
+<!-- ══════════════════════ HERO ═════════════════════════════════ -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-eyebrow">
+      <span class="tag">🛡️ Federated Learning · Intrusion Detection</span>
+    </div>
+    <h1>A network that learns<br><span>new threats by itself</span></h1>
+    <p class="hero-desc">
+      FL CyberShield distributes threat intelligence across your entire network without ever
+      moving raw traffic data. When <em>one</em> node detects a new attack, <em>every</em> node
+      learns within minutes — automatically.
+    </p>
+    <div class="kpi-row">
+      <div class="kpi kpi-c">
+        <div class="kpi-value" id="kpi1">0</div>
+        <div class="kpi-label">Detection accuracy</div>
+      </div>
+      <div class="kpi kpi-g">
+        <div class="kpi-value" id="kpi2">0</div>
+        <div class="kpi-label">Attack classes detected</div>
+      </div>
+      <div class="kpi kpi-o">
+        <div class="kpi-value" id="kpi3">0</div>
+        <div class="kpi-label">Rounds to propagate zero-day</div>
+      </div>
+      <div class="kpi kpi-p">
+        <div class="kpi-value" id="kpi4">0</div>
+        <div class="kpi-label">Clients — no raw data shared</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════ HOW IT WORKS ════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="tag">The scenario</div>
+    <h2 class="section-title">Zero-Day Discovery: How it works</h2>
+    <p class="section-sub">
+      Five independent network nodes train local IDS models. None of them have ever seen
+      <strong style="color:var(--orange)">SQL injection attacks</strong> in their traffic.
+      At round&nbsp;5, Client&nbsp;0 encounters the attack for the first time — and the entire
+      federation learns.
+    </p>
+
+    <!-- FL network diagram -->
+    <div class="scenario-diagram fade-in">
+      <div class="clients-row" id="clients-row">
+        <!-- injected by JS -->
+      </div>
+      <div class="connector-area">
+        <svg class="connector-svg" id="connector-svg" viewBox="0 0 800 80" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="server-node">
+        <div class="server-icon">🌐</div>
+        <div class="server-label">
+          <strong>FL Aggregation Server</strong>
+          FedAvg · eval-only · no raw data
+        </div>
+      </div>
+    </div>
+
+    <!-- Steps -->
+    <div class="steps fade-in">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">Local training (rounds 1–5)</div>
+        <div class="step-desc">Each client trains on its local traffic. No SQL injection samples exist anywhere in the network. Zero-day F1&nbsp;=&nbsp;0.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">Discovery event (after round 5)</div>
+        <div class="step-desc">Client&nbsp;0 detects SQL injection in the wild. It silently adds those samples to local training — no manual alert sent.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">Federation propagates (rounds 6–13)</div>
+        <div class="step-desc">Model weights aggregated each round carry the zero-day signal. By round&nbsp;13, F1 jumps from&nbsp;0 to&nbsp;0.16.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-title">Network-wide awareness (rounds 14+)</div>
+        <div class="step-desc">The global model stabilises at F1&nbsp;≈&nbsp;0.28 on the zero-day attack — from zero, with <em>no central data repository</em>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════ CLIENT CARDS ════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="tag">Network topology</div>
+    <h2 class="section-title">Client data distribution</h2>
+    <p class="section-sub">
+      Each client holds an independent slice of IoT network traffic. All 5 nodes share the same
+      attack categories — but <strong style="color:var(--red)">SQL injection is completely absent</strong>
+      before round&nbsp;5. Client&nbsp;0 is the discovering node.
+    </p>
+    <div class="clients-grid" id="clients-grid">
+      <!-- injected by JS -->
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════ TIMELINE ════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="tag">Real experiment results</div>
+    <h2 class="section-title">Zero-day propagation timeline</h2>
+    <p class="section-sub">
+      Zero-day F1, macro F1, and accuracy evaluated on the server's held-out eval set (10 % of all
+      traffic, including SQL injection) after every FL communication round.
+    </p>
+    <div class="card fade-in">
+      <div class="timeline-wrap">
+        <canvas id="timelineChart"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════ PER-CLASS ════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="tag">Before vs. after</div>
+    <h2 class="section-title">Per-class F1: Round&nbsp;5 → Round&nbsp;20</h2>
+    <p class="section-sub">
+      Comparison of detection quality per attack type at the discovery event vs. at the end of
+      training. The zero-day class goes from undetectable to measurable — while all other classes
+      maintain or improve.
+    </p>
+    <div class="card fade-in">
+      <div class="perclass-wrap">
+        <canvas id="perClassChart"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════ CALLOUT ══════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="callout fade-in">
+      <div class="callout-num" id="callout-num">0×</div>
+      <div class="callout-text">F1 improvement on an attack no client had ever seen</div>
+      <div class="callout-sub">
+        From completely blind (F1&nbsp;=&nbsp;0.000) to active detection (F1&nbsp;=&nbsp;0.282) —
+        in 8 communication rounds, without a single raw packet leaving any node.
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════ FOOTER ════════════════════════════════ -->
+<footer>
+  <div class="container">
+    <div class="footer-logo">🛡️ FL CyberShield</div>
+    <div class="footer-sub">
+      Federated Learning · Intrusion Detection · Edge-IIoTset (2.2M events · 15 attack classes)
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/Telefonica-Scientific-Research/FL_Demo_Cyber" target="_blank">GitHub Repository</a>
+      <a href="https://www.kaggle.com/datasets/mohamedamineferrag/edgeiiotset-cyber-security-dataset-of-iot-iiot" target="_blank">Dataset</a>
+      <a href="https://doi.org/10.1109/ACCESS.2022.3170542" target="_blank">Reference Paper</a>
+    </div>
+  </div>
+</footer>
+
+<!-- ══════════════════════ DATA & CHARTS ════════════════════════ -->
+<script>
+// ────────────────────────────────────────────────────────────────────
+// Embedded experiment data  (from Results/new_attack_results.json)
+// ────────────────────────────────────────────────────────────────────
+const ROUNDS    = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
+const ZD_F1     = [0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0026,0.0439,0.1557,0.2767,0.2875,0.2870,0.2854,0.2854,0.2852,0.2818];
+const ZD_PREC   = [0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,1.0000,1.0000,0.9950,0.8788,0.8462,0.8400,0.8382,0.8382,0.8380,0.8235];
+const ZD_REC    = [0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0013,0.0224,0.0847,0.1727,0.1851,0.1893,0.1879,0.1879,0.1878,0.1782];
+const MACRO_F1  = [0.5822,0.6302,0.6262,0.6258,0.6253,0.6315,0.6326,0.6313,0.6339,0.6391,0.6696,0.6744,0.6764,0.6839,0.6865,0.6815,0.6843,0.6797,0.6892,0.6867];
+const ACCURACY  = [0.9139,0.9218,0.9225,0.9185,0.9188,0.9198,0.9203,0.9204,0.9204,0.9209,0.9237,0.9246,0.9252,0.9270,0.9273,0.9263,0.9260,0.9257,0.9264,0.9257];
+const DISC_ROUND = 5;
+
+const CLASS_NAMES = ['Backdoor','DDoS HTTP','DDoS ICMP','DDoS TCP','DDoS UDP','Fingerprinting','MITM','Normal','Password','Port Scanning','Ransomware','SQL injection','Uploading','Vuln. scanner','XSS'];
+const F1_R5  = [0.7302,0.7343,0.9700,0.6353,0.9982,0.2377,1.0000,1.0000,0.5894,0.3919,0.2750,0.0000,0.4737,0.8907,0.4531];
+const F1_R20 = [0.7188,0.7358,0.9894,0.6472,0.9997,0.4731,1.0000,1.0000,0.5853,0.3838,0.6370,0.2818,0.5030,0.8930,0.4521];
+// SQL injection index = 11
+
+// Per-client attack category distribution (approximate, IID split of 501970 training samples)
+// Categories: Normal, DoS/DDoS, Recon, Malware, Injection (no SQL), MITM
+const CLIENT_DIST = {
+  labels: ['Normal', 'DoS / DDoS', 'Recon', 'Malware', 'Injection (no SQL)', 'MITM'],
+  colors: ['#2d4a7a','#00e5ff','#a855f7','#ff6b35','#ffcc00','#00ff88'],
+  // Approximate sample counts per client (100 394 total each)
+  data: [73669, 15580, 3811, 4529, 2785, 22]
+};
+
+const CHART_DEFAULTS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      labels: { color: '#c8d8f0', font: { size: 11 }, boxWidth: 14, padding: 16 }
+    },
+    tooltip: {
+      backgroundColor: 'rgba(13,20,36,.95)',
+      borderColor: '#1e3060',
+      borderWidth: 1,
+      titleColor: '#fff',
+      bodyColor: '#c8d8f0',
+      padding: 12,
+    }
+  },
+  scales: {
+    x: {
+      grid: { color: 'rgba(30,48,96,.4)' },
+      ticks: { color: '#7a9cc4' }
+    },
+    y: {
+      grid: { color: 'rgba(30,48,96,.4)' },
+      ticks: { color: '#7a9cc4' }
+    }
+  }
+};
+
+// ────────────────────────────────────────────────────────────────────
+// KPI counter animation
+// ────────────────────────────────────────────────────────────────────
+function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const ease = t < .5 ? 2*t*t : -1+(4-2*t)*t;
+    const val = ease * target;
+    el.textContent = prefix + (decimals > 0 ? val.toFixed(decimals) : Math.round(val)) + suffix;
+    if (t < 1) requestAnimationFrame(step);
+    else el.textContent = prefix + (decimals > 0 ? target.toFixed(decimals) : target) + suffix;
+  }
+  requestAnimationFrame(step);
+}
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    animateCounter(document.getElementById('kpi1'), 92.57, 1200, '%', 1);
+    animateCounter(document.getElementById('kpi2'), 15, 900, '/15');
+    animateCounter(document.getElementById('kpi3'), 8, 800, ' rounds');
+    animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
+    animateCounter(document.getElementById('callout-num'), 0.282, 1400, '×', 3);
+  }, 300);
+});
+
+// ────────────────────────────────────────────────────────────────────
+// FL network diagram (connector SVG lines)
+// ────────────────────────────────────────────────────────────────────
+const N_CLIENTS = 5;
+const clientEmojis = ['💻','🖥️','📡','🔧','🌐'];
+const rowEl  = document.getElementById('clients-row');
+const svgEl  = document.getElementById('connector-svg');
+
+for (let i = 0; i < N_CLIENTS; i++) {
+  const node = document.createElement('div');
+  node.className = 'client-node' + (i === 0 ? ' discoverer' : '');
+  node.innerHTML = `
+    <div class="client-icon">
+      ${clientEmojis[i]}
+      ${i === 0 ? '<span class="badge-zd">Discoverer</span>' : ''}
+    </div>
+    <div class="client-label">
+      <strong>Client ${i}</strong>
+      ${i === 0 ? '🔍 SQL injection found R5' : '13 attack classes'}
+    </div>`;
+  rowEl.appendChild(node);
+}
+
+// Draw SVG connector lines from each client to server
+// We approximate positions after layout
+function drawConnectors() {
+  const rowRect = rowEl.getBoundingClientRect();
+  const svgRect = svgEl.parentElement.getBoundingClientRect();
+  const nodeEls = rowEl.querySelectorAll('.client-node');
+  const vb = { w: 800, h: 80 };
+
+  let paths = '';
+  nodeEls.forEach((n, i) => {
+    const nr = n.getBoundingClientRect();
+    const cx = ((nr.left + nr.width/2 - svgRect.left) / svgRect.width) * vb.w;
+    const color = i === 0 ? '#ff6b35' : '#00e5ff';
+    const opacity = i === 0 ? '1' : '0.5';
+    paths += `<path d="M${cx},0 Q${cx},50 400,${vb.h}"
+      stroke="${color}" stroke-width="${i===0?2:1.2}" fill="none" opacity="${opacity}"
+      stroke-dasharray="${i===0?'none':'6 3'}"/>`;
+  });
+  svgEl.innerHTML = paths;
+}
+setTimeout(drawConnectors, 200);
+window.addEventListener('resize', drawConnectors);
+
+// ────────────────────────────────────────────────────────────────────
+// Client distribution cards (donut charts)
+// ────────────────────────────────────────────────────────────────────
+const gridEl = document.getElementById('clients-grid');
+for (let i = 0; i < N_CLIENTS; i++) {
+  const card = document.createElement('div');
+  card.className = 'client-card' + (i === 0 ? ' discoverer' : '');
+  card.innerHTML = `
+    <div class="client-card-header">
+      <div class="client-card-icon">${clientEmojis[i]}</div>
+      <div>
+        <div class="client-card-name">Client ${i}${i===0?' ⚡':''}</div>
+        <div class="client-card-sub">~100,394 samples</div>
+      </div>
+    </div>
+    <div class="client-chart-wrap"><canvas id="donut-${i}"></canvas></div>
+    <div class="client-sample-count">
+      <span class="no-sql-badge">⛔ SQL injection absent</span>
+      ${i===0 ? '<br><span class="sql-discovered-badge">🔍 Discovered at round 5</span>' : ''}
+    </div>`;
+  gridEl.appendChild(card);
+}
+
+setTimeout(() => {
+  for (let i = 0; i < N_CLIENTS; i++) {
+    new Chart(document.getElementById(`donut-${i}`), {
+      type: 'doughnut',
+      data: {
+        labels: CLIENT_DIST.labels,
+        datasets: [{
+          data: CLIENT_DIST.data,
+          backgroundColor: CLIENT_DIST.colors.map(c => c + 'bb'),
+          borderColor:     CLIENT_DIST.colors,
+          borderWidth: 1.5,
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...CHART_DEFAULTS.plugins.tooltip,
+            callbacks: {
+              label: ctx => ` ${ctx.label}: ${((ctx.raw/100394)*100).toFixed(1)}%`
+            }
+          }
+        },
+        animation: { duration: 800, delay: i * 120 }
+      }
+    });
+  }
+}, 100);
+
+// ────────────────────────────────────────────────────────────────────
+// Timeline chart
+// ────────────────────────────────────────────────────────────────────
+const tlCtx = document.getElementById('timelineChart').getContext('2d');
+
+// Annotation: discovery line via gradient or just a dataset point
+// We use a "fill between" approach with a pseudo-dataset for the shaded region
+const preLabels  = ROUNDS.map(r => r <= DISC_ROUND ? r : null).filter(Boolean);
+
+new Chart(tlCtx, {
+  type: 'line',
+  data: {
+    labels: ROUNDS,
+    datasets: [
+      {
+        label: 'SQL injection F1 (zero-day)',
+        data: ZD_F1,
+        borderColor: '#ff6b35',
+        backgroundColor: 'rgba(255,107,53,.15)',
+        borderWidth: 2.5,
+        pointRadius: ROUNDS.map(r => r === 11 || r === 14 ? 7 : 4),
+        pointBackgroundColor: ROUNDS.map(r => r === 11 || r === 14 ? '#ff6b35' : 'transparent'),
+        pointBorderColor: '#ff6b35',
+        tension: .35,
+        fill: true,
+        order: 1
+      },
+      {
+        label: 'Global Macro F1',
+        data: MACRO_F1,
+        borderColor: '#00e5ff',
+        backgroundColor: 'transparent',
+        borderWidth: 1.8,
+        pointRadius: 3,
+        tension: .35,
+        borderDash: [],
+        order: 2
+      },
+      {
+        label: 'Accuracy',
+        data: ACCURACY,
+        borderColor: '#00ff88',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 2,
+        tension: .35,
+        borderDash: [5, 3],
+        order: 3
+      },
+      {
+        // Discovery line: single vertical annotation via a "scatter" trick
+        label: '← Discovery event (Round 5)',
+        data: ROUNDS.map(r => r === DISC_ROUND + 0.5 ? null : null),
+        borderColor: 'rgba(255,255,255,.3)',
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        pointRadius: 0,
+        order: 4
+      }
+    ]
+  },
+  options: {
+    ...CHART_DEFAULTS,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      ...CHART_DEFAULTS.plugins,
+      annotation: {},
+      tooltip: {
+        ...CHART_DEFAULTS.plugins.tooltip,
+        callbacks: {
+          title: ctx => `Round ${ctx[0].label}${ctx[0].label <= DISC_ROUND ? '  (Pre-discovery)' : '  (Post-discovery)'}`,
+          label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        ...CHART_DEFAULTS.scales.x,
+        title: { display: true, text: 'FL Communication Round', color: '#7a9cc4' },
+        ticks: {
+          color: ctx => ctx.tick.value === DISC_ROUND ? '#ff6b35' : '#7a9cc4',
+          font: ctx => ctx.tick.value === DISC_ROUND
+            ? { weight: 'bold', size: 11 }
+            : { size: 10 }
+        }
+      },
+      y: {
+        ...CHART_DEFAULTS.scales.y,
+        min: 0, max: 1.05,
+        title: { display: true, text: 'Score', color: '#7a9cc4' }
+      }
+    }
+  },
+  plugins: [{
+    // Draw custom discovery line & shading
+    afterDraw(chart) {
+      const { ctx, scales: { x, y } } = chart;
+      const xDisc = x.getPixelForValue(DISC_ROUND);
+      const xEnd  = x.getPixelForValue(ROUNDS[ROUNDS.length-1]);
+      const yTop  = y.top;
+      const yBot  = y.bottom;
+
+      // Shade post-discovery region
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,255,136,.04)';
+      ctx.fillRect(xDisc, yTop, xEnd - xDisc, yBot - yTop);
+
+      // Shade pre-discovery region
+      ctx.fillStyle = 'rgba(255,56,96,.04)';
+      ctx.fillRect(x.left, yTop, xDisc - x.left, yBot - yTop);
+
+      // Vertical dashed line
+      ctx.setLineDash([6, 3]);
+      ctx.strokeStyle = 'rgba(255,107,53,.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(xDisc, yTop);
+      ctx.lineTo(xDisc, yBot);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label on the line
+      ctx.fillStyle = '#ff6b35';
+      ctx.font = 'bold 10px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Discovery', xDisc, yTop + 12);
+
+      // Phase labels
+      ctx.fillStyle = 'rgba(255,56,96,.5)';
+      ctx.font = '9px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('PRE-DISCOVERY', (x.left + xDisc)/2, yBot - 8);
+
+      ctx.fillStyle = 'rgba(0,255,136,.5)';
+      ctx.textAlign = 'center';
+      ctx.fillText('POST-DISCOVERY', (xDisc + xEnd)/2, yBot - 8);
+
+      ctx.restore();
+    }
+  }]
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Per-class horizontal bar chart
+// ────────────────────────────────────────────────────────────────────
+// Sort by F1 at round 20 descending, SQL injection always highlighted
+const order = CLASS_NAMES.map((_, i) => i)
+  .sort((a, b) => F1_R20[b] - F1_R20[a]);
+
+const sortedLabels = order.map(i => CLASS_NAMES[i]);
+const sortedR5     = order.map(i => F1_R5[i]);
+const sortedR20    = order.map(i => F1_R20[i]);
+const SQL_IDX_SORTED = order.indexOf(11);
+
+const bgR5  = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? 'rgba(255,56,96,.25)'  : 'rgba(0,229,255,.15)');
+const bgR20 = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? 'rgba(255,107,53,.6)'  : 'rgba(0,255,136,.35)');
+const bdR5  = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? '#ff3860' : '#00e5ff');
+const bdR20 = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? '#ff6b35' : '#00ff88');
+
+const pcCtx = document.getElementById('perClassChart').getContext('2d');
+new Chart(pcCtx, {
+  type: 'bar',
+  data: {
+    labels: sortedLabels,
+    datasets: [
+      {
+        label: 'Round 5 (before discovery)',
+        data: sortedR5,
+        backgroundColor: bgR5,
+        borderColor: bdR5,
+        borderWidth: 1.2,
+        borderRadius: 4
+      },
+      {
+        label: 'Round 20 (final)',
+        data: sortedR20,
+        backgroundColor: bgR20,
+        borderColor: bdR20,
+        borderWidth: 1.2,
+        borderRadius: 4
+      }
+    ]
+  },
+  options: {
+    ...CHART_DEFAULTS,
+    indexAxis: 'y',
+    scales: {
+      x: {
+        ...CHART_DEFAULTS.scales.x,
+        min: 0, max: 1.05,
+        title: { display: true, text: 'F1 Score', color: '#7a9cc4' }
+      },
+      y: {
+        ...CHART_DEFAULTS.scales.y,
+        ticks: {
+          color: ctx => {
+            // highlight SQL injection label
+            return sortedLabels[ctx.index] === 'SQL injection'
+              ? '#ff6b35' : '#c8d8f0';
+          },
+          font: ctx => ({
+            weight: sortedLabels[ctx.index] === 'SQL injection' ? 'bold' : 'normal',
+            size: 11
+          })
+        }
+      }
+    },
+    plugins: {
+      ...CHART_DEFAULTS.plugins,
+      tooltip: {
+        ...CHART_DEFAULTS.plugins.tooltip,
+        callbacks: {
+          label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.x.toFixed(4)}`
+        }
+      }
+    }
+  },
+  plugins: [{
+    afterDraw(chart) {
+      // Draw a star / highlight bar on SQL injection row
+      const { ctx, scales: { x } } = chart;
+      const meta0 = chart.getDatasetMeta(0);
+      if (!meta0.data[SQL_IDX_SORTED]) return;
+      const bar = meta0.data[SQL_IDX_SORTED];
+      const y = bar.y;
+      const xRight = x.getPixelForValue(1.0) + 32;
+      ctx.save();
+      ctx.fillStyle = '#ff6b35';
+      ctx.font = 'bold 9px Segoe UI, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('← ZERO-DAY', x.getPixelForValue(1.01), y + 3);
+      ctx.restore();
+    }
+  }]
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Intersection Observer for fade-in animations
+// ────────────────────────────────────────────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      observer.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

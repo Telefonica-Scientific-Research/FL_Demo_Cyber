@@ -1,0 +1,209 @@
+2026-05-20 16:49:03,313  INFO  NumExpr defaulting to 8 threads.
+2026-05-20 16:49:04,155  INFO  FL-Demo Experiment Pipeline
+2026-05-20 16:49:04,155  INFO    sample_frac   = 0.30
+2026-05-20 16:49:04,155  INFO    c_epochs      = 20
+2026-05-20 16:49:04,155  INFO    fl_rounds     = 20
+2026-05-20 16:49:04,155  INFO    fl_local_ep   = 2
+2026-05-20 16:49:04,155  INFO    fl_clients    = 5
+2026-05-20 16:49:04,155  INFO  [SKIP] Centralized results already exist: /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/centralized_results.json
+2026-05-20 16:49:04,155  INFO  
+############################################################
+2026-05-20 16:49:04,155  INFO  #  STAGE 2 – FEDERATED LEARNING SIMULATION
+2026-05-20 16:49:04,155  INFO  #===========================================================
+2026-05-20 16:49:04,156  INFO  Loading dataset from /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Data/EdgeIIoTset/DNN-EdgeIIoT-dataset.csv …
+2026-05-20 16:49:25,683  INFO  Raw shape: (2219201, 63)
+2026-05-20 16:49:29,366  INFO  Sampled 30 % → shape: (572901, 48)
+2026-05-20 16:49:30,727  INFO  Preprocessed → X: (572901, 88)  |  classes (15): ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Normal', 'Password', 'Port_Scanning', 'Ransomware', 'SQL_injection', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-20 16:49:31,098  INFO  Client 0 [DoS_DDoS] : 396663 samples | attacks: ['DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP']
+2026-05-20 16:49:31,118  INFO  Client 1 [Recon] : 344110 samples | attacks: ['Port_Scanning', 'Vulnerability_scanner']
+2026-05-20 16:49:31,139  INFO  Client 2 [Injection] : 351908 samples | attacks: ['SQL_injection', 'Uploading', 'XSS']
+2026-05-20 16:49:31,161  INFO  Client 3 [MITM] : 339578 samples | attacks: ['MITM', 'Password']
+2026-05-20 16:49:31,181  INFO  Client 4 [Malware] : 335474 samples | attacks: ['Backdoor', 'Ransomware']
+2026-05-20 16:49:31,186  INFO  Device: cpu  |  Clients: 5  |  Rounds: 20  |  Local epochs: 2  |  FedProx μ=0.0100
+2026-05-20 16:49:31,186  INFO  Using balanced mini-batch sampling to prevent majority-class collapse.
+2026-05-20 16:49:31,186  INFO  
+============================================================
+2026-05-20 16:49:31,186  INFO  PHASE 1 – LOCAL-ONLY BASELINE (balanced sampling, no federation)
+2026-05-20 16:49:31,186  INFO  ============================================================
+2026-05-20 16:52:30,769  INFO    Client 0 [DoS_DDoS]  macro_F1=0.2543  acc=0.8654
+2026-05-20 16:55:02,693  INFO    Client 1 [Recon]  macro_F1=0.0985  acc=0.7508
+2026-05-20 16:57:36,842  INFO    Client 2 [Injection]  macro_F1=0.1292  acc=0.7560
+2026-05-20 17:00:07,531  INFO    Client 3 [MITM]  macro_F1=0.0891  acc=0.7409
+2026-05-20 17:02:34,668  INFO    Client 4 [Malware]  macro_F1=0.0853  acc=0.7311
+2026-05-20 17:02:34,668  INFO  
+============================================================
+2026-05-20 17:02:34,668  INFO  PHASE 2 – FEDERATED LEARNING (FedProx μ=0.0100)
+2026-05-20 17:02:34,668  INFO  ============================================================
+FL rounds:   0%|          | 0/20 [00:00<?, ?it/s]2026-05-20 17:03:17,666  INFO    Round 01/20 | macro_F1=0.1156  acc=0.7409
+FL rounds:   5%|▌         | 1/20 [00:42<13:36, 42.97s/it]2026-05-20 17:03:59,857  INFO    Round 02/20 | macro_F1=0.2483  acc=0.7966
+FL rounds:  10%|█         | 2/20 [01:25<12:45, 42.51s/it]2026-05-20 17:04:42,301  INFO    Round 03/20 | macro_F1=0.3388  acc=0.8563
+FL rounds:  15%|█▌        | 3/20 [02:07<12:02, 42.48s/it]2026-05-20 17:05:24,516  INFO    Round 04/20 | macro_F1=0.3608  acc=0.8598
+FL rounds:  20%|██        | 4/20 [02:49<11:18, 42.38s/it]2026-05-20 17:06:07,159  INFO    Round 05/20 | macro_F1=0.3639  acc=0.8620
+FL rounds:  25%|██▌       | 5/20 [03:32<10:37, 42.47s/it]2026-05-20 17:06:49,530  INFO    Round 06/20 | macro_F1=0.4039  acc=0.8731
+FL rounds:  30%|███       | 6/20 [04:14<09:54, 42.44s/it]2026-05-20 17:07:32,657  INFO    Round 07/20 | macro_F1=0.4001  acc=0.8692
+FL rounds:  35%|███▌      | 7/20 [04:57<09:14, 42.66s/it]2026-05-20 17:08:15,175  INFO    Round 08/20 | macro_F1=0.4129  acc=0.8714
+FL rounds:  40%|████      | 8/20 [05:40<08:31, 42.62s/it]2026-05-20 17:08:58,301  INFO    Round 09/20 | macro_F1=0.3771  acc=0.8680
+FL rounds:  45%|████▌     | 9/20 [06:23<07:50, 42.78s/it]2026-05-20 17:09:40,949  INFO    Round 10/20 | macro_F1=0.4097  acc=0.8743
+FL rounds:  50%|█████     | 10/20 [07:06<07:07, 42.74s/it]2026-05-20 17:10:23,398  INFO    Round 11/20 | macro_F1=0.4348  acc=0.8823
+FL rounds:  55%|█████▌    | 11/20 [07:48<06:23, 42.65s/it]2026-05-20 17:11:05,543  INFO    Round 12/20 | macro_F1=0.4584  acc=0.8878
+FL rounds:  60%|██████    | 12/20 [08:30<05:39, 42.50s/it]2026-05-20 17:11:48,601  INFO    Round 13/20 | macro_F1=0.4839  acc=0.8997
+FL rounds:  65%|██████▌   | 13/20 [09:13<04:58, 42.67s/it]2026-05-20 17:12:30,858  INFO    Round 14/20 | macro_F1=0.4844  acc=0.8953
+FL rounds:  70%|███████   | 14/20 [09:56<04:15, 42.54s/it]2026-05-20 17:13:13,613  INFO    Round 15/20 | macro_F1=0.4839  acc=0.8970
+FL rounds:  75%|███████▌  | 15/20 [10:38<03:33, 42.61s/it]2026-05-20 17:13:56,541  INFO    Round 16/20 | macro_F1=0.5029  acc=0.9011
+FL rounds:  80%|████████  | 16/20 [11:21<02:50, 42.70s/it]2026-05-20 17:14:39,348  INFO    Round 17/20 | macro_F1=0.4746  acc=0.8972
+FL rounds:  85%|████████▌ | 17/20 [12:04<02:08, 42.73s/it]2026-05-20 17:15:21,341  INFO    Round 18/20 | macro_F1=0.4876  acc=0.9011
+FL rounds:  90%|█████████ | 18/20 [12:46<01:25, 42.51s/it]2026-05-20 17:16:03,328  INFO    Round 19/20 | macro_F1=0.4698  acc=0.8980
+FL rounds:  95%|█████████▌| 19/20 [13:28<00:42, 42.35s/it]2026-05-20 17:16:45,414  INFO    Round 20/20 | macro_F1=0.4495  acc=0.8962
+FL rounds: 100%|██████████| 20/20 [14:10<00:00, 42.27s/it]FL rounds: 100%|██████████| 20/20 [14:10<00:00, 42.54s/it]
+2026-05-20 17:16:45,414  INFO  
+============================================================
+2026-05-20 17:16:45,414  INFO  PHASE 3 – PER-CLIENT COMPARISON (local vs. FL)
+2026-05-20 17:16:45,414  INFO  ============================================================
+2026-05-20 17:16:46,055  INFO  
+Client 0 [DoS_DDoS]:
+2026-05-20 17:16:46,055  INFO    Macro F1  local=0.2543  →  FL=0.4495  (Δ +0.1952)
+2026-05-20 17:16:46,055  INFO    Avg F1 gain on 10 unseen attacks: +0.3144
+2026-05-20 17:16:46,055  INFO      Vulnerability_scanner                     local=0.000  FL=0.889  Δ=+0.889
+2026-05-20 17:16:46,055  INFO      Backdoor                                  local=0.000  FL=0.753  Δ=+0.753
+2026-05-20 17:16:46,055  INFO      Password                                  local=0.000  FL=0.490  Δ=+0.490
+2026-05-20 17:16:46,055  INFO      Port_Scanning                             local=0.000  FL=0.415  Δ=+0.415
+2026-05-20 17:16:46,055  INFO      SQL_injection                             local=0.000  FL=0.395  Δ=+0.395
+2026-05-20 17:16:46,055  INFO      XSS                                       local=0.000  FL=0.144  Δ=+0.144
+2026-05-20 17:16:46,055  INFO      MITM                                      local=0.000  FL=0.055  Δ=+0.055
+2026-05-20 17:16:46,055  INFO      Uploading                                 local=0.000  FL=0.005  Δ=+0.004
+2026-05-20 17:16:46,055  INFO      Fingerprinting                            local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,055  INFO      Ransomware                                local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,460  INFO  
+Client 1 [Recon]:
+2026-05-20 17:16:46,460  INFO    Macro F1  local=0.0985  →  FL=0.4495  (Δ +0.3510)
+2026-05-20 17:16:46,460  INFO    Avg F1 gain on 12 unseen attacks: +0.3699
+2026-05-20 17:16:46,460  INFO      DDoS_ICMP                                 local=0.000  FL=0.989  Δ=+0.989
+2026-05-20 17:16:46,461  INFO      DDoS_UDP                                  local=0.000  FL=0.932  Δ=+0.932
+2026-05-20 17:16:46,461  INFO      Backdoor                                  local=0.000  FL=0.753  Δ=+0.753
+2026-05-20 17:16:46,461  INFO      DDoS_HTTP                                 local=0.000  FL=0.678  Δ=+0.678
+2026-05-20 17:16:46,461  INFO      Password                                  local=0.000  FL=0.490  Δ=+0.490
+2026-05-20 17:16:46,461  INFO      SQL_injection                             local=0.000  FL=0.395  Δ=+0.395
+2026-05-20 17:16:46,461  INFO      XSS                                       local=0.000  FL=0.144  Δ=+0.144
+2026-05-20 17:16:46,461  INFO      MITM                                      local=0.000  FL=0.055  Δ=+0.055
+2026-05-20 17:16:46,461  INFO      Uploading                                 local=0.000  FL=0.005  Δ=+0.004
+2026-05-20 17:16:46,461  INFO      DDoS_TCP                                  local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,461  INFO      Fingerprinting                            local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,461  INFO      Ransomware                                local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,814  INFO  
+Client 2 [Injection]:
+2026-05-20 17:16:46,814  INFO    Macro F1  local=0.1292  →  FL=0.4495  (Δ +0.3203)
+2026-05-20 17:16:46,814  INFO    Avg F1 gain on 11 unseen attacks: +0.4727
+2026-05-20 17:16:46,814  INFO      DDoS_ICMP                                 local=0.000  FL=0.989  Δ=+0.989
+2026-05-20 17:16:46,814  INFO      DDoS_UDP                                  local=0.000  FL=0.932  Δ=+0.932
+2026-05-20 17:16:46,814  INFO      Vulnerability_scanner                     local=0.000  FL=0.889  Δ=+0.889
+2026-05-20 17:16:46,814  INFO      Backdoor                                  local=0.000  FL=0.753  Δ=+0.753
+2026-05-20 17:16:46,814  INFO      DDoS_HTTP                                 local=0.000  FL=0.678  Δ=+0.678
+2026-05-20 17:16:46,814  INFO      Password                                  local=0.000  FL=0.490  Δ=+0.490
+2026-05-20 17:16:46,814  INFO      Port_Scanning                             local=0.000  FL=0.415  Δ=+0.415
+2026-05-20 17:16:46,814  INFO      MITM                                      local=0.000  FL=0.055  Δ=+0.055
+2026-05-20 17:16:46,814  INFO      DDoS_TCP                                  local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,814  INFO      Fingerprinting                            local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:46,814  INFO      Ransomware                                local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:47,217  INFO  
+Client 3 [MITM]:
+2026-05-20 17:16:47,218  INFO    Macro F1  local=0.0891  →  FL=0.4495  (Δ +0.3605)
+2026-05-20 17:16:47,218  INFO    Avg F1 gain on 12 unseen attacks: +0.4332
+2026-05-20 17:16:47,218  INFO      DDoS_ICMP                                 local=0.000  FL=0.989  Δ=+0.989
+2026-05-20 17:16:47,218  INFO      DDoS_UDP                                  local=0.000  FL=0.932  Δ=+0.932
+2026-05-20 17:16:47,218  INFO      Vulnerability_scanner                     local=0.000  FL=0.889  Δ=+0.889
+2026-05-20 17:16:47,218  INFO      Backdoor                                  local=0.000  FL=0.753  Δ=+0.753
+2026-05-20 17:16:47,218  INFO      DDoS_HTTP                                 local=0.000  FL=0.678  Δ=+0.678
+2026-05-20 17:16:47,218  INFO      Port_Scanning                             local=0.000  FL=0.415  Δ=+0.415
+2026-05-20 17:16:47,218  INFO      SQL_injection                             local=0.000  FL=0.395  Δ=+0.395
+2026-05-20 17:16:47,218  INFO      XSS                                       local=0.000  FL=0.144  Δ=+0.144
+2026-05-20 17:16:47,218  INFO      Uploading                                 local=0.000  FL=0.005  Δ=+0.004
+2026-05-20 17:16:47,218  INFO      DDoS_TCP                                  local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:47,218  INFO      Fingerprinting                            local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:47,218  INFO      Ransomware                                local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:47,620  INFO  
+Client 4 [Malware]:
+2026-05-20 17:16:47,620  INFO    Macro F1  local=0.0853  →  FL=0.4495  (Δ +0.3642)
+2026-05-20 17:16:47,620  INFO    Avg F1 gain on 12 unseen attacks: +0.4158
+2026-05-20 17:16:47,620  INFO      DDoS_ICMP                                 local=0.000  FL=0.989  Δ=+0.989
+2026-05-20 17:16:47,620  INFO      DDoS_UDP                                  local=0.000  FL=0.932  Δ=+0.932
+2026-05-20 17:16:47,620  INFO      Vulnerability_scanner                     local=0.000  FL=0.889  Δ=+0.889
+2026-05-20 17:16:47,620  INFO      DDoS_HTTP                                 local=0.000  FL=0.678  Δ=+0.678
+2026-05-20 17:16:47,620  INFO      Password                                  local=0.000  FL=0.490  Δ=+0.490
+2026-05-20 17:16:47,620  INFO      Port_Scanning                             local=0.000  FL=0.415  Δ=+0.415
+2026-05-20 17:16:47,620  INFO      SQL_injection                             local=0.000  FL=0.395  Δ=+0.395
+2026-05-20 17:16:47,620  INFO      XSS                                       local=0.000  FL=0.144  Δ=+0.144
+2026-05-20 17:16:47,620  INFO      MITM                                      local=0.000  FL=0.055  Δ=+0.055
+2026-05-20 17:16:47,621  INFO      Uploading                                 local=0.000  FL=0.005  Δ=+0.004
+2026-05-20 17:16:47,621  INFO      DDoS_TCP                                  local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:47,621  INFO      Fingerprinting                            local=0.000  FL=0.000  Δ=+0.000
+2026-05-20 17:16:47,691  INFO  
+=== FINAL FL GLOBAL MODEL ===
+2026-05-20 17:16:47,691  INFO  Accuracy       : 0.8962
+2026-05-20 17:16:47,691  INFO  Macro F1       : 0.4495
+2026-05-20 17:16:47,691  INFO  Weighted F1    : 0.8880
+2026-05-20 17:16:47,691  INFO  Macro Precision: 0.5021
+2026-05-20 17:16:47,691  INFO  Macro Recall   : 0.5597
+2026-05-20 17:16:47,734  INFO  
+Results → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/federated_results.json
+2026-05-20 17:16:47,734  INFO  Model   → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/federated_global_model.pt
+2026-05-20 17:16:47,742  INFO  
+############################################################
+2026-05-20 17:16:47,742  INFO  #  STAGE 3 – COMPARISON REPORT & FIGURES
+2026-05-20 17:16:47,742  INFO  #===========================================================
+2026-05-20 17:16:48,076  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/01_overall_comparison.png
+2026-05-20 17:16:48,246  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/02_per_class_f1.png
+2026-05-20 17:16:48,362  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/03_fl_convergence.png
+2026-05-20 17:16:48,560  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/04_unseen_attack_benefit.png
+2026-05-20 17:16:48,674  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/05_client_overview.png
+2026-05-20 17:16:48,674  INFO  All figures saved to /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures
+2026-05-20 17:16:48,674  INFO  
+Pipeline complete.  Results in /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results
+2026-05-20 17:16:48,674  INFO  Figures in /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures
+
+                       precision    recall  f1-score   support
+
+             Backdoor       0.76      0.74      0.75      1427
+            DDoS_HTTP       0.66      0.70      0.68      2907
+            DDoS_ICMP       0.99      0.99      0.99      4100
+             DDoS_TCP       0.00      0.00      0.00      2970
+             DDoS_UDP       0.97      0.89      0.93      7336
+       Fingerprinting       0.00      0.00      0.00        59
+                 MITM       0.03      1.00      0.05        23
+               Normal       1.00      1.00      1.00     81854
+             Password       0.38      0.69      0.49      3018
+        Port_Scanning       0.26      1.00      0.42      1200
+           Ransomware       0.00      0.00      0.00       589
+        SQL_injection       0.40      0.39      0.39      3031
+            Uploading       1.00      0.00      0.00      2196
+Vulnerability_scanner       0.94      0.84      0.89      2974
+                  XSS       0.14      0.15      0.14       897
+
+             accuracy                           0.90    114581
+            macro avg       0.50      0.56      0.45    114581
+         weighted avg       0.91      0.90      0.89    114581
+
+
+========================================================================
+  FL DEMO – SUMMARY REPORT
+  Dataset: Edge-IIoTset  |  Model: DNN  |  Algorithm: FedAvg
+========================================================================
+
+Metric                            Centralized      Federated          Δ
+------------------------------------------------------------------------
+  Accuracy                             0.9337         0.8962    -0.0375
+  Macro F1                             0.7186         0.4495    -0.2691
+  Weighted F1                          0.9363         0.8880    -0.0483
+
+  FL Macro Precision                                  0.5021
+  FL Macro Recall                                     0.5597
+
+  FL best macro F1 achieved at round 16: 0.5029
+
+  Unseen-Attack F1 Improvement (via FL vs. local-only):
+    Mean  Δ : +0.4030
+    Max   Δ : +0.9886
+    Min   Δ : +0.0000
+    Attacks with Δ > 0.05: 40/57
+
+========================================================================
+

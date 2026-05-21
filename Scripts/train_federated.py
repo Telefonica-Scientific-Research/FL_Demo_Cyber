@@ -52,7 +52,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -69,6 +69,31 @@ RESULTS_DIR = ROOT / "Results"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _make_balanced_loader(
+    X: np.ndarray, y: np.ndarray, batch_size: int
+) -> DataLoader:
+    """
+    DataLoader with per-class balanced sampling via WeightedRandomSampler.
+
+    Each class contributes equally to every mini-batch, preventing the
+    majority Normal class from dominating local training and causing
+    model collapse.
+    """
+    class_counts = np.bincount(y).astype(np.float64)
+    # Weight each sample inversely proportional to its class frequency
+    sample_weights = 1.0 / np.maximum(class_counts[y], 1.0)
+    sampler = WeightedRandomSampler(
+        weights=torch.from_numpy(sample_weights.astype(np.float32)),
+        num_samples=len(y),
+        replacement=True,
+    )
+    ds = TensorDataset(
+        torch.from_numpy(X),
+        torch.from_numpy(y.astype(np.int64)),
+    )
+    return DataLoader(ds, batch_size=batch_size, sampler=sampler, num_workers=0)
+
 
 def _make_loader(
     X: np.ndarray, y: np.ndarray, batch_size: int, shuffle: bool = True
@@ -88,11 +113,24 @@ def _local_train(
     batch_size: int,
     lr: float,
     device: torch.device,
-    class_weights: torch.Tensor,
+    global_model_params: list | None = None,
+    mu: float = 0.0,
 ) -> nn.Module:
-    """Train a client model for `local_epochs` on its private data."""
-    loader = _make_loader(X, y, batch_size)
-    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+    """
+    Train a client model locally using balanced mini-batches.
+
+    Balanced sampling (WeightedRandomSampler) ensures every attack class
+    contributes equally to each batch, preventing the majority Normal class
+    from causing model collapse on highly imbalanced non-IID data.
+
+    Parameters
+    ----------
+    global_model_params : fixed snapshot of global model parameters for FedProx.
+    mu : FedProx proximal coefficient (0 = standard FedAvg).
+        Penalises ||w_local - w_global||² to limit client drift on non-IID data.
+    """
+    loader = _make_balanced_loader(X, y, batch_size)
+    criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
 
     model.train()
@@ -100,7 +138,17 @@ def _local_train(
         for xb, yb in loader:
             xb, yb = xb.to(device), yb.to(device)
             optimizer.zero_grad()
-            criterion(model(xb), yb).backward()
+            loss = criterion(model(xb), yb)
+
+            # FedProx: (μ/2) * ||w_local − w_global||²
+            if mu > 0.0 and global_model_params is not None:
+                prox = sum(
+                    ((lp - gp.detach()) ** 2).sum()
+                    for lp, gp in zip(model.parameters(), global_model_params)
+                )
+                loss = loss + (mu / 2.0) * prox
+
+            loss.backward()
             optimizer.step()
     return model
 
@@ -186,24 +234,22 @@ def run(args: argparse.Namespace) -> dict:
     )
     n_clients = len(clients_data)
 
-    # ── Device & class weights ────────────────────────────────────────────
+    # ── Device ────────────────────────────────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    log.info("Device: %s  |  Clients: %d  |  Rounds: %d  |  Local epochs: %d",
-             device, n_clients, args.rounds, args.local_epochs)
-
-    # Global class weights (computed over all training data, used everywhere)
-    all_y_train = np.concatenate([yc for _, yc in clients_data])
-    counts = np.bincount(all_y_train, minlength=num_classes).astype(np.float32)
-    class_weights = torch.tensor(1.0 / np.maximum(counts, 1))
-    class_weights = class_weights / class_weights.sum()
+    mu = getattr(args, "mu", 0.01)
+    log.info(
+        "Device: %s  |  Clients: %d  |  Rounds: %d  |  Local epochs: %d  |  FedProx μ=%.4f",
+        device, n_clients, args.rounds, args.local_epochs, mu,
+    )
+    log.info("Using balanced mini-batch sampling to prevent majority-class collapse.")
 
     # ──────────────────────────────────────────────────────────────────────
     # PHASE 1 – Local-only baseline
-    # Each client trains independently for rounds × local_epochs total epochs.
-    # No knowledge is shared across clients.
+    # Each client trains independently for rounds × local_epochs total epochs
+    # using balanced sampling, but NO knowledge is shared across clients.
     # ──────────────────────────────────────────────────────────────────────
     log.info("\n" + "=" * 60)
-    log.info("PHASE 1 – LOCAL-ONLY BASELINE (no federation)")
+    log.info("PHASE 1 – LOCAL-ONLY BASELINE (balanced sampling, no federation)")
     log.info("=" * 60)
 
     local_models: list[nn.Module] = []
@@ -214,7 +260,7 @@ def run(args: argparse.Namespace) -> dict:
         m = build_model(input_dim, num_classes).to(device)
         m = _local_train(
             m, X_c, y_c, total_local_epochs, args.batch_size, args.lr,
-            device, class_weights
+            device, global_model_params=None, mu=0.0,
         )
         local_models.append(m)
 
@@ -228,10 +274,10 @@ def run(args: argparse.Namespace) -> dict:
         )
 
     # ──────────────────────────────────────────────────────────────────────
-    # PHASE 2 – Federated Learning (FedAvg simulation)
+    # PHASE 2 – Federated Learning (FedProx / FedAvg simulation)
     # ──────────────────────────────────────────────────────────────────────
     log.info("\n" + "=" * 60)
-    log.info("PHASE 2 – FEDERATED LEARNING (FedAvg)")
+    log.info("PHASE 2 – FEDERATED LEARNING (FedProx μ=%.4f)", mu)
     log.info("=" * 60)
 
     global_model = build_model(input_dim, num_classes).to(device)
@@ -242,11 +288,12 @@ def run(args: argparse.Namespace) -> dict:
         round_client_models: list[nn.Module] = []
         round_client_sizes: list[int] = []
 
+        global_params = [p.detach().clone() for p in global_model.parameters()]
         for X_c, y_c in clients_data:
             m = copy.deepcopy(global_model)
             m = _local_train(
                 m, X_c, y_c, args.local_epochs, args.batch_size, args.lr,
-                device, class_weights
+                device, global_model_params=global_params, mu=mu,
             )
             round_client_models.append(m)
             round_client_sizes.append(len(X_c))
@@ -395,14 +442,17 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--rounds", type=int, default=20,
                    help="Number of FL communication rounds (default: 20).")
-    p.add_argument("--local-epochs", type=int, default=5,
+    p.add_argument("--local-epochs", type=int, default=2,
                    help="Local training epochs per round per client (default: 5).")
     p.add_argument("--num-clients", type=int, default=5,
                    help="Number of FL clients / threat domains (default: 5).")
     p.add_argument("--batch-size", type=int, default=512,
                    help="Mini-batch size for local training (default: 512).")
-    p.add_argument("--lr", type=float, default=1e-3,
-                   help="Local learning rate (default: 1e-3).")
+    p.add_argument("--lr", type=float, default=5e-4,
+                   help="Local learning rate (default: 5e-4).")
+    p.add_argument("--mu", type=float, default=0.01,
+                   help="FedProx proximal coefficient μ (default: 0.01). "
+                        "Set 0 for standard FedAvg.")
     p.add_argument("--sample-frac", type=float, default=0.3,
                    help="Fraction of dataset to use (default: 0.3 for speed). "
                         "Set 1.0 for the full dataset.")

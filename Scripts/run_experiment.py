@@ -67,10 +67,12 @@ def _parse() -> argparse.Namespace:
 
     # FL options
     p.add_argument("--rounds",        type=int,   default=20)
-    p.add_argument("--local-epochs",  type=int,   default=5)
+    p.add_argument("--local-epochs",  type=int,   default=2)
     p.add_argument("--num-clients",   type=int,   default=5)
-    p.add_argument("--fl-lr",         type=float, default=1e-3)
+    p.add_argument("--fl-lr",         type=float, default=5e-4)
     p.add_argument("--fl-batch-size", type=int,   default=512)
+    p.add_argument("--mu",            type=float, default=0.01,
+                   help="FedProx proximal coefficient (default: 0.01).")
 
     # Pipeline control
     p.add_argument("--skip-centralized", action="store_true",
@@ -123,6 +125,7 @@ def _stage_federated(args: argparse.Namespace) -> None:
         num_clients=args.num_clients,
         batch_size=args.fl_batch_size,
         lr=args.fl_lr,
+        mu=args.mu,
         sample_frac=args.sample_frac,
     )
     run_federated(f_ns)

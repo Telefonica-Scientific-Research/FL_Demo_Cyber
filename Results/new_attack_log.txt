@@ -1,0 +1,69 @@
+2026-05-21 10:25:27,343  INFO  Loading dataset from /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Data/EdgeIIoTset/DNN-EdgeIIoT-dataset.csv …
+2026-05-21 10:25:49,007  INFO  Raw shape: (2219201, 63)
+2026-05-21 10:25:52,416  INFO  Sampled 30 % → shape: (572901, 48)
+2026-05-21 10:25:53,602  INFO  Preprocessed → X: (572901, 88)  |  classes (15): ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Normal', 'Password', 'Port_Scanning', 'Ransomware', 'SQL_injection', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-21 10:25:53,607  INFO  Zero-day attack: 'SQL_injection'  (class index 11)
+2026-05-21 10:25:53,948  INFO  Server eval set: 57291 samples  (zero-day samples in eval: 1516)
+2026-05-21 10:25:53,974  INFO  Training pool: 501970 standard samples | 13640 zero-day samples (held for discovery)
+2026-05-21 10:25:54,043  INFO  Client 0: 100394 samples | attacks: ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Password', 'Port_Scanning', 'Ransomware', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-21 10:25:54,044  INFO  Client 1: 100394 samples | attacks: ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Password', 'Port_Scanning', 'Ransomware', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-21 10:25:54,045  INFO  Client 2: 100394 samples | attacks: ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Password', 'Port_Scanning', 'Ransomware', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-21 10:25:54,046  INFO  Client 3: 100394 samples | attacks: ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Password', 'Port_Scanning', 'Ransomware', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-21 10:25:54,048  INFO  Client 4: 100394 samples | attacks: ['Backdoor', 'DDoS_HTTP', 'DDoS_ICMP', 'DDoS_TCP', 'DDoS_UDP', 'Fingerprinting', 'MITM', 'Password', 'Port_Scanning', 'Ransomware', 'Uploading', 'Vulnerability_scanner', 'XSS']
+2026-05-21 10:25:54,054  INFO  Device: cpu | Clients: 5 | Rounds: 20 | Local epochs: 2 | FedProx μ=0.0100 | Discovery: client 0 at round 5
+2026-05-21 10:25:54,054  INFO  Zero-day attack: 'SQL_injection'
+2026-05-21 10:25:54,078  INFO  
+======================================================================
+2026-05-21 10:25:54,078  INFO  FL TRAINING  (zero-day='SQL_injection'  discovery=round 5  client 0)
+2026-05-21 10:25:54,078  INFO  ======================================================================
+FL rounds:   0%|          | 0/20 [00:00<?, ?it/s]2026-05-21 10:26:08,724  INFO    Round 01 [pre_discovery]  zero_day_F1=0.0000  macro_F1=0.5822  acc=0.9139
+FL rounds:   5%|▌         | 1/20 [00:14<04:37, 14.62s/it]2026-05-21 10:26:23,882  INFO    Round 02 [pre_discovery]  zero_day_F1=0.0000  macro_F1=0.6302  acc=0.9218
+FL rounds:  10%|█         | 2/20 [00:29<04:28, 14.94s/it]2026-05-21 10:26:39,172  INFO    Round 03 [pre_discovery]  zero_day_F1=0.0000  macro_F1=0.6262  acc=0.9225
+FL rounds:  15%|█▌        | 3/20 [00:45<04:16, 15.10s/it]2026-05-21 10:26:53,474  INFO    Round 04 [pre_discovery]  zero_day_F1=0.0000  macro_F1=0.6258  acc=0.9185
+FL rounds:  20%|██        | 4/20 [00:59<03:56, 14.78s/it]2026-05-21 10:27:08,388  INFO    Round 05 [pre_discovery]  zero_day_F1=0.0000  macro_F1=0.6253  acc=0.9188
+FL rounds:  25%|██▌       | 5/20 [01:14<03:42, 14.83s/it]2026-05-21 10:27:24,251  INFO    Round 06 [post_discovery]  zero_day_F1=0.0000  macro_F1=0.6315  acc=0.9198
+FL rounds:  30%|███       | 6/20 [01:30<03:32, 15.18s/it]2026-05-21 10:27:39,092  INFO    Round 07 [post_discovery]  zero_day_F1=0.0000  macro_F1=0.6326  acc=0.9203
+FL rounds:  35%|███▌      | 7/20 [01:44<03:15, 15.07s/it]2026-05-21 10:27:54,060  INFO    Round 08 [post_discovery]  zero_day_F1=0.0000  macro_F1=0.6313  acc=0.9204
+FL rounds:  40%|████      | 8/20 [01:59<03:00, 15.04s/it]2026-05-21 10:28:08,732  INFO    Round 09 [post_discovery]  zero_day_F1=0.0000  macro_F1=0.6339  acc=0.9204
+FL rounds:  45%|████▌     | 9/20 [02:14<02:44, 14.92s/it]2026-05-21 10:28:23,691  INFO    Round 10 [post_discovery]  zero_day_F1=0.0000  macro_F1=0.6391  acc=0.9209
+FL rounds:  50%|█████     | 10/20 [02:29<02:29, 14.93s/it]2026-05-21 10:28:37,800  INFO    Round 11 [post_discovery]  zero_day_F1=0.0026  macro_F1=0.6696  acc=0.9237
+FL rounds:  55%|█████▌    | 11/20 [02:43<02:12, 14.68s/it]2026-05-21 10:28:52,015  INFO    Round 12 [post_discovery]  zero_day_F1=0.0439  macro_F1=0.6744  acc=0.9246
+FL rounds:  60%|██████    | 12/20 [02:57<01:56, 14.54s/it]2026-05-21 10:29:06,980  INFO    Round 13 [post_discovery]  zero_day_F1=0.1557  macro_F1=0.6764  acc=0.9252
+FL rounds:  65%|██████▌   | 13/20 [03:12<01:42, 14.67s/it]2026-05-21 10:29:22,305  INFO    Round 14 [post_discovery]  zero_day_F1=0.2767  macro_F1=0.6839  acc=0.9270
+FL rounds:  70%|███████   | 14/20 [03:28<01:29, 14.87s/it]2026-05-21 10:29:37,320  INFO    Round 15 [post_discovery]  zero_day_F1=0.2875  macro_F1=0.6865  acc=0.9273
+FL rounds:  75%|███████▌  | 15/20 [03:43<01:14, 14.91s/it]2026-05-21 10:29:51,659  INFO    Round 16 [post_discovery]  zero_day_F1=0.2870  macro_F1=0.6815  acc=0.9263
+FL rounds:  80%|████████  | 16/20 [03:57<00:58, 14.74s/it]2026-05-21 10:30:06,783  INFO    Round 17 [post_discovery]  zero_day_F1=0.2854  macro_F1=0.6843  acc=0.9260
+FL rounds:  85%|████████▌ | 17/20 [04:12<00:44, 14.85s/it]2026-05-21 10:30:21,933  INFO    Round 18 [post_discovery]  zero_day_F1=0.2854  macro_F1=0.6797  acc=0.9257
+FL rounds:  90%|█████████ | 18/20 [04:27<00:29, 14.94s/it]2026-05-21 10:30:36,796  INFO    Round 19 [post_discovery]  zero_day_F1=0.2852  macro_F1=0.6892  acc=0.9264
+FL rounds:  95%|█████████▌| 19/20 [04:42<00:14, 14.92s/it]2026-05-21 10:30:51,726  INFO    Round 20 [post_discovery]  zero_day_F1=0.2818  macro_F1=0.6867  acc=0.9257
+FL rounds: 100%|██████████| 20/20 [04:57<00:00, 14.92s/it]FL rounds: 100%|██████████| 20/20 [04:57<00:00, 14.88s/it]
+2026-05-21 10:30:51,777  INFO  
+=== FINAL GLOBAL MODEL (server eval set) ===
+2026-05-21 10:30:51,803  INFO  Results → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/new_attack_results.json
+2026-05-21 10:30:51,803  INFO  Model   → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/new_attack_global_model.pt
+/Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Scripts/train_fl_new_attack.py:498: UserWarning: This figure includes Axes that are not compatible with tight_layout, so results might be incorrect.
+  plt.tight_layout()
+2026-05-21 10:30:52,550  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/06_zero_day_discovery.png
+2026-05-21 10:30:52,798  INFO  Saved figure → /Users/dsolans/Documents/Research/PROJECTS/CyberLab/FL-Demo/Results/figures/07_per_class_checkpoints.png
+                       precision    recall  f1-score   support
+
+             Backdoor       1.00      0.56      0.72       713
+            DDoS_HTTP       0.94      0.61      0.74      1453
+            DDoS_ICMP       1.00      0.98      0.99      2050
+             DDoS_TCP       0.71      0.60      0.65      1485
+             DDoS_UDP       1.00      1.00      1.00      3668
+       Fingerprinting       0.35      0.73      0.47        30
+                 MITM       1.00      1.00      1.00        12
+               Normal       1.00      1.00      1.00     40927
+             Password       0.44      0.88      0.59      1509
+        Port_Scanning       0.32      0.48      0.38       600
+           Ransomware       0.49      0.90      0.64       294
+        SQL_injection       0.82      0.17      0.28      1516
+            Uploading       0.62      0.43      0.50      1098
+Vulnerability_scanner       0.94      0.85      0.89      1487
+                  XSS       0.32      0.78      0.45       449
+
+             accuracy                           0.93     57291
+            macro avg       0.73      0.73      0.69     57291
+         weighted avg       0.95      0.93      0.93     57291
+

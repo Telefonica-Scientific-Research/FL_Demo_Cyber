@@ -135,3 +135,6 @@ dmypy.json
 
 # Project-specific exclusions
 Data/          # raw datasets (large files, download via Scripts/download_data.py)
+
+# Allow result JSON files (overrides global gitignore *.json rule)
+!Results/*.json

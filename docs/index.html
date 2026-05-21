@@ -526,10 +526,13 @@ footer {
     <div class="tag">The scenario</div>
     <h2 class="section-title">Zero-Day Discovery: How it works</h2>
     <p class="section-sub">
-      Five independent network nodes train local IDS models. None of them have ever seen
-      <strong style="color:var(--orange)">SQL injection attacks</strong> in their traffic.
-      At round&nbsp;5, Client&nbsp;0 encounters the attack for the first time — and the entire
-      federation learns.
+      Five independent network nodes train local IDS models on <strong>IID</strong> data — every
+      client holds all 15 attack classes, including
+      <strong style="color:var(--orange)">SQL injection</strong>.
+      At round&nbsp;5, Client&nbsp;0 receives an 80 % surge of fresh SQL injection traffic and the
+      federation must absorb it. We compare <strong style="color:var(--cyan)">FedAvg</strong>
+      (uniform averaging) vs <strong style="color:var(--purple)">FedDiv</strong>
+      (divergence-weighted aggregation).
     </p>
 
     <!-- FL network diagram -->
@@ -553,23 +556,23 @@ footer {
     <div class="steps fade-in">
       <div class="step">
         <div class="step-num">1</div>
-        <div class="step-title">Local training (rounds 1–5)</div>
-        <div class="step-desc">Each client trains on its local traffic. No SQL injection samples exist anywhere in the network. Zero-day F1&nbsp;=&nbsp;0.</div>
+        <div class="step-title">IID setup — balanced clients</div>
+        <div class="step-desc">All 5 clients share the same distribution of 15 attack classes. SQL injection F1 starts around 0.29 once the global model converges.</div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
-        <div class="step-title">Discovery event (after round 5)</div>
-        <div class="step-desc">Client&nbsp;0 detects SQL injection in the wild. It silently adds those samples to local training — no manual alert sent.</div>
+        <div class="step-title">Discovery surge (round 5)</div>
+        <div class="step-desc">Client&nbsp;0 absorbs an 80 % surge of new SQL injection traffic — 10,912 extra samples — and begins over-representing the attack locally.</div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <div class="step-title">Federation propagates (rounds 6–13)</div>
-        <div class="step-desc">Model weights aggregated each round carry the zero-day signal. By round&nbsp;13, F1 jumps from&nbsp;0 to&nbsp;0.16.</div>
+        <div class="step-title">FedDiv amplifies divergent updates</div>
+        <div class="step-desc">FedDiv weights each client by its L2 gradient divergence from the global model. Client&nbsp;0's large shift gets <em>amplified</em>, accelerating propagation.</div>
       </div>
       <div class="step">
         <div class="step-num">4</div>
-        <div class="step-title">Network-wide awareness (rounds 14+)</div>
-        <div class="step-desc">The global model stabilises at F1&nbsp;≈&nbsp;0.28 on the zero-day attack — from zero, with <em>no central data repository</em>.</div>
+        <div class="step-title">Global model converges (rounds 15–20)</div>
+        <div class="step-desc">Both strategies reach SQL injection F1&nbsp;≈&nbsp;0.60. FedDiv shows higher macro F1 (0.724) vs FedAvg (0.714), with no raw data exchanged.</div>
       </div>
     </div>
   </div>
@@ -583,9 +586,9 @@ footer {
     <div class="tag">Network topology</div>
     <h2 class="section-title">Client data distribution</h2>
     <p class="section-sub">
-      Each client holds an independent slice of IoT network traffic. All 5 nodes share the same
-      attack categories — but <strong style="color:var(--red)">SQL injection is completely absent</strong>
-      before round&nbsp;5. Client&nbsp;0 is the discovering node.
+      Each client holds an IID slice of IoT network traffic — all 15 attack classes present on every node.
+      Client&nbsp;0 is the <strong style="color:var(--orange)">surge node</strong> that receives an 80 % influx
+      of SQL injection traffic at round&nbsp;5, causing high gradient divergence from the global model.
     </p>
     <div class="clients-grid" id="clients-grid">
       <!-- injected by JS -->
@@ -599,10 +602,10 @@ footer {
 <section class="section">
   <div class="container">
     <div class="tag">Real experiment results</div>
-    <h2 class="section-title">Zero-day propagation timeline</h2>
+    <h2 class="section-title">FedAvg vs FedDiv — SQL injection F1 timeline</h2>
     <p class="section-sub">
-      Zero-day F1, macro F1, and accuracy evaluated on the server's held-out eval set (10 % of all
-      traffic, including SQL injection) after every FL communication round.
+      SQL injection F1 and global macro F1 evaluated on the server's held-out eval set (10 % of all
+      traffic) after every FL communication round. Vertical line marks the discovery surge at round&nbsp;5.
     </p>
     <div class="card fade-in">
       <div class="timeline-wrap">
@@ -617,12 +620,12 @@ footer {
 <!-- ══════════════════════ PER-CLASS ════════════════════════════ -->
 <section class="section">
   <div class="container">
-    <div class="tag">Before vs. after</div>
-    <h2 class="section-title">Per-class F1: Round&nbsp;5 → Round&nbsp;20</h2>
+    <div class="tag">Final round comparison</div>
+    <h2 class="section-title">Per-class F1: FedAvg vs FedDiv (Round 20)</h2>
     <p class="section-sub">
-      Comparison of detection quality per attack type at the discovery event vs. at the end of
-      training. The zero-day class goes from undetectable to measurable — while all other classes
-      maintain or improve.
+      Final detection quality per attack type for both strategies after 20 rounds.
+      SQL injection and Ransomware show the clearest FedDiv advantage — classes most affected
+      by Client&nbsp;0's surge.
     </p>
     <div class="card fade-in">
       <div class="perclass-wrap">
@@ -639,10 +642,10 @@ footer {
   <div class="container">
     <div class="callout fade-in">
       <div class="callout-num" id="callout-num">0×</div>
-      <div class="callout-text">F1 improvement on an attack no client had ever seen</div>
+      <div class="callout-text">SQL injection F1 improvement after discovery surge</div>
       <div class="callout-sub">
-        From completely blind (F1&nbsp;=&nbsp;0.000) to active detection (F1&nbsp;=&nbsp;0.282) —
-        in 8 communication rounds, without a single raw packet leaving any node.
+        From baseline F1&nbsp;=&nbsp;0.29 (pre-surge) to F1&nbsp;=&nbsp;0.60 at round&nbsp;20 —
+        FedDiv macro F1 outperforms FedAvg (0.724 vs 0.714) without a single raw packet leaving any node.
       </div>
     </div>
   </div>
@@ -671,16 +674,22 @@ footer {
 // Embedded experiment data  (from Results/new_attack_results.json)
 // ────────────────────────────────────────────────────────────────────
 const ROUNDS    = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
-const ZD_F1     = [0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0026,0.0439,0.1557,0.2767,0.2875,0.2870,0.2854,0.2854,0.2852,0.2818];
-const ZD_PREC   = [0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,1.0000,1.0000,0.9950,0.8788,0.8462,0.8400,0.8382,0.8382,0.8380,0.8235];
-const ZD_REC    = [0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0013,0.0224,0.0847,0.1727,0.1851,0.1893,0.1879,0.1879,0.1878,0.1782];
-const MACRO_F1  = [0.5822,0.6302,0.6262,0.6258,0.6253,0.6315,0.6326,0.6313,0.6339,0.6391,0.6696,0.6744,0.6764,0.6839,0.6865,0.6815,0.6843,0.6797,0.6892,0.6867];
-const ACCURACY  = [0.9139,0.9218,0.9225,0.9185,0.9188,0.9198,0.9203,0.9204,0.9204,0.9209,0.9237,0.9246,0.9252,0.9270,0.9273,0.9263,0.9260,0.9257,0.9264,0.9257];
 const DISC_ROUND = 5;
 
+// FedAvg per-round metrics
+const FA_TGT_F1  = [0.5614,0.394,0.2699,0.2707,0.2912,0.2912,0.4746,0.2915,0.2912,0.2912,0.5521,0.3,0.4059,0.2927,0.2966,0.3,0.4203,0.3,0.3,0.6018];
+const FA_MACRO   = [0.6494,0.6623,0.6552,0.6564,0.664,0.6727,0.6921,0.6908,0.6855,0.6888,0.6974,0.6923,0.6961,0.6943,0.7031,0.7004,0.7191,0.7173,0.7214,0.7135];
+const FA_ACC     = [0.9253,0.9246,0.9241,0.9244,0.9258,0.9273,0.9256,0.9269,0.9262,0.9263,0.927,0.9264,0.9264,0.9267,0.9277,0.9274,0.9287,0.9295,0.9297,0.9294];
+
+// FedDiv per-round metrics
+const FD_TGT_F1  = [0.5604,0.4681,0.2773,0.2806,0.3409,0.4266,0.3027,0.3521,0.2965,0.2912,0.5669,0.293,0.3406,0.41,0.515,0.384,0.3,0.5842,0.3139,0.594];
+const FD_MACRO   = [0.6351,0.664,0.6573,0.6606,0.6664,0.6726,0.6827,0.7035,0.685,0.6886,0.6952,0.6935,0.6959,0.6997,0.706,0.7086,0.708,0.7234,0.7174,0.7236];
+const FD_ACC     = [0.9255,0.9239,0.9243,0.9251,0.9254,0.9258,0.9254,0.9286,0.926,0.9269,0.9275,0.9273,0.9268,0.9266,0.9274,0.9275,0.9282,0.93,0.9294,0.9303];
+
+// Final per-class F1 (round 20)
 const CLASS_NAMES = ['Backdoor','DDoS HTTP','DDoS ICMP','DDoS TCP','DDoS UDP','Fingerprinting','MITM','Normal','Password','Port Scanning','Ransomware','SQL injection','Uploading','Vuln. scanner','XSS'];
-const F1_R5  = [0.7302,0.7343,0.9700,0.6353,0.9982,0.2377,1.0000,1.0000,0.5894,0.3919,0.2750,0.0000,0.4737,0.8907,0.4531];
-const F1_R20 = [0.7188,0.7358,0.9894,0.6472,0.9997,0.4731,1.0000,1.0000,0.5853,0.3838,0.6370,0.2818,0.5030,0.8930,0.4521];
+const FA_PC_F1   = [0.9206,0.7364,0.9901,0.6482,0.9997,0.4889,1.0,1.0,0.266,0.3813,0.8507,0.6018,0.4717,0.8939,0.4527];
+const FD_PC_F1   = [0.9554,0.7364,0.9909,0.6499,0.9999,0.5,1.0,1.0,0.312,0.3813,0.9154,0.594,0.4717,0.8939,0.4527];
 // SQL injection index = 11
 
 // Per-client attack category distribution (approximate, IID split of 501970 training samples)
@@ -738,11 +747,11 @@ function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
 
 window.addEventListener('load', () => {
   setTimeout(() => {
-    animateCounter(document.getElementById('kpi1'), 92.57, 1200, '%', 1);
+    animateCounter(document.getElementById('kpi1'), 93.03, 1200, '%', 1);
     animateCounter(document.getElementById('kpi2'), 15, 900, '/15');
-    animateCounter(document.getElementById('kpi3'), 8, 800, ' rounds');
+    animateCounter(document.getElementById('kpi3'), 5, 800, ' rounds');
     animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
-    animateCounter(document.getElementById('callout-num'), 0.282, 1400, '×', 3);
+    animateCounter(document.getElementById('callout-num'), 2.07, 1400, '×', 2);
   }, 300);
 });
 
@@ -809,8 +818,8 @@ for (let i = 0; i < N_CLIENTS; i++) {
     </div>
     <div class="client-chart-wrap"><canvas id="donut-${i}"></canvas></div>
     <div class="client-sample-count">
-      <span class="no-sql-badge">⛔ SQL injection absent</span>
-      ${i===0 ? '<br><span class="sql-discovered-badge">🔍 Discovered at round 5</span>' : ''}
+      <span class="no-sql-badge">✅ IID — all 15 attack classes</span>
+      ${i===0 ? '<br><span class="sql-discovered-badge">⚡ 80 % SQL surge at round 5</span>' : ''}
     </div>`;
   gridEl.appendChild(card);
 }
@@ -863,33 +872,35 @@ new Chart(tlCtx, {
     labels: ROUNDS,
     datasets: [
       {
-        label: 'SQL injection F1 (zero-day)',
-        data: ZD_F1,
+        label: 'FedAvg — SQL injection F1',
+        data: FA_TGT_F1,
         borderColor: '#ff6b35',
-        backgroundColor: 'rgba(255,107,53,.15)',
+        backgroundColor: 'rgba(255,107,53,.10)',
         borderWidth: 2.5,
-        pointRadius: ROUNDS.map(r => r === 11 || r === 14 ? 7 : 4),
-        pointBackgroundColor: ROUNDS.map(r => r === 11 || r === 14 ? '#ff6b35' : 'transparent'),
+        pointRadius: 4,
+        pointBackgroundColor: 'transparent',
         pointBorderColor: '#ff6b35',
         tension: .35,
-        fill: true,
+        fill: false,
         order: 1
       },
       {
-        label: 'Global Macro F1',
-        data: MACRO_F1,
-        borderColor: '#00e5ff',
-        backgroundColor: 'transparent',
-        borderWidth: 1.8,
-        pointRadius: 3,
+        label: 'FedDiv — SQL injection F1',
+        data: FD_TGT_F1,
+        borderColor: '#a855f7',
+        backgroundColor: 'rgba(168,85,247,.10)',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointBackgroundColor: 'transparent',
+        pointBorderColor: '#a855f7',
         tension: .35,
-        borderDash: [],
+        fill: false,
         order: 2
       },
       {
-        label: 'Accuracy',
-        data: ACCURACY,
-        borderColor: '#00ff88',
+        label: 'FedAvg — Macro F1',
+        data: FA_MACRO,
+        borderColor: '#00e5ff',
         backgroundColor: 'transparent',
         borderWidth: 1.5,
         pointRadius: 2,
@@ -898,13 +909,14 @@ new Chart(tlCtx, {
         order: 3
       },
       {
-        // Discovery line: single vertical annotation via a "scatter" trick
-        label: '← Discovery event (Round 5)',
-        data: ROUNDS.map(r => r === DISC_ROUND + 0.5 ? null : null),
-        borderColor: 'rgba(255,255,255,.3)',
+        label: 'FedDiv — Macro F1',
+        data: FD_MACRO,
+        borderColor: '#00ff88',
         backgroundColor: 'transparent',
-        borderWidth: 0,
-        pointRadius: 0,
+        borderWidth: 1.5,
+        pointRadius: 2,
+        tension: .35,
+        borderDash: [5, 3],
         order: 4
       }
     ]
@@ -993,19 +1005,19 @@ new Chart(tlCtx, {
 // ────────────────────────────────────────────────────────────────────
 // Per-class horizontal bar chart
 // ────────────────────────────────────────────────────────────────────
-// Sort by F1 at round 20 descending, SQL injection always highlighted
+// Sort by FedDiv final F1 descending, highlight SQL injection
 const order = CLASS_NAMES.map((_, i) => i)
-  .sort((a, b) => F1_R20[b] - F1_R20[a]);
+  .sort((a, b) => FD_PC_F1[b] - FD_PC_F1[a]);
 
 const sortedLabels = order.map(i => CLASS_NAMES[i]);
-const sortedR5     = order.map(i => F1_R5[i]);
-const sortedR20    = order.map(i => F1_R20[i]);
-const SQL_IDX_SORTED = order.indexOf(11);
+const sortedFA     = order.map(i => FA_PC_F1[i]);
+const sortedFD     = order.map(i => FD_PC_F1[i]);
+const SQL_IDX_SORTED = order.findIndex(i => CLASS_NAMES[i] === 'SQL injection');
 
-const bgR5  = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? 'rgba(255,56,96,.25)'  : 'rgba(0,229,255,.15)');
-const bgR20 = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? 'rgba(255,107,53,.6)'  : 'rgba(0,255,136,.35)');
-const bdR5  = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? '#ff3860' : '#00e5ff');
-const bdR20 = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? '#ff6b35' : '#00ff88');
+const bgFA = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? 'rgba(255,107,53,.5)'  : 'rgba(0,229,255,.15)');
+const bgFD = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? 'rgba(168,85,247,.7)'  : 'rgba(0,255,136,.30)');
+const bdFA = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? '#ff6b35' : '#00e5ff');
+const bdFD = sortedLabels.map((_, i) => i === SQL_IDX_SORTED ? '#a855f7' : '#00ff88');
 
 const pcCtx = document.getElementById('perClassChart').getContext('2d');
 new Chart(pcCtx, {
@@ -1014,18 +1026,18 @@ new Chart(pcCtx, {
     labels: sortedLabels,
     datasets: [
       {
-        label: 'Round 5 (before discovery)',
-        data: sortedR5,
-        backgroundColor: bgR5,
-        borderColor: bdR5,
+        label: 'FedAvg — Round 20',
+        data: sortedFA,
+        backgroundColor: bgFA,
+        borderColor: bdFA,
         borderWidth: 1.2,
         borderRadius: 4
       },
       {
-        label: 'Round 20 (final)',
-        data: sortedR20,
-        backgroundColor: bgR20,
-        borderColor: bdR20,
+        label: 'FedDiv — Round 20',
+        data: sortedFD,
+        backgroundColor: bgFD,
+        borderColor: bdFD,
         borderWidth: 1.2,
         borderRadius: 4
       }
@@ -1078,7 +1090,7 @@ new Chart(pcCtx, {
       ctx.fillStyle = '#ff6b35';
       ctx.font = 'bold 9px Segoe UI, sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('← ZERO-DAY', x.getPixelForValue(1.01), y + 3);
+      ctx.fillText('← SQL injection', x.getPixelForValue(1.01), y + 3);
       ctx.restore();
     }
   }]

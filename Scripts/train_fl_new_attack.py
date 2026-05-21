@@ -2,53 +2,76 @@
 """
 train_fl_new_attack.py
 ======================
-Federated Learning – Zero-Day Attack Discovery Scenario
+Federated Learning – Incremental Attack Discovery using **Flower (flwr)**.
 
 Scenario
 --------
-• All FL clients share the full dataset EXCEPT one designated "zero-day" attack.
-  Each client trains a model whose output space covers all present classes
-  (num_total_classes − 1 standard attacks + Normal).  The zero-day class is
-  present in the model architecture but receives no local supervision until the
-  discovery event — its output neurons are only shaped by FedProx regularisation
-  before that point.
+All FL clients start with an IID slice of the FULL dataset, including a
+small baseline share of the target attack class ("SQL_injection" by default).
+After --discovery-round warm-up rounds, Client 0 ("the discoverer") starts
+receiving a large additional pool of that attack class in its local traffic,
+simulating a network that is suddenly being targeted by an attack the FL
+system partially already knows.
 
-• 10 % of the FULL dataset (including zero-day samples) is reserved exclusively
-  as the FL server's evaluation set.  It is NEVER used for training.
+The server holds 10 % of the full dataset (stratified) for evaluation and
+measures per-round F1 on the target class to quantify how fast threat
+intelligence propagates across the federation.
 
-• After a warm-up phase (rounds 1 … --discovery-round), ONE designated client
-  ("the discovering client") has the zero-day samples added to its local database
-  and continues participating in FL normally.
+Two FL strategies are compared
+-------------------------------
+FedAvg (baseline)
+    Standard weighted-average aggregation proportional to local dataset sizes.
+    The discoverer's new knowledge is diluted by the other clients.
 
-• The experiment records the global model's per-round zero-day F1 on the server
-  evaluation set, quantifying how rapidly a single client's new threat intelligence
-  propagates to the entire federated network.
+FedDiv (Divergence-Weighted FedAvg)
+    After each round each client's effective weight is proportional to the L2
+    distance between its local model and the current global model.  Clients
+    that diverge more automatically gain more influence — so the discoverer's
+    signal amplifies itself without any hand-tuned boost factor.
+
+Data partitioning
+-----------------
+  server_frac (10 %)   : stratified eval set — never used for training
+  discovery_frac (80 %) : target-attack samples held for discovery pool
+  remaining 20 % of target attack + all other traffic : IID split N ways
+
+  → each client starts with ALL 15 attack classes (including ~20 % of the
+    target), so the global model already detects it at round 1 but
+    imperfectly; after the discovery event it improves measurably.
 
 Outputs
 -------
     Results/new_attack_results.json
-    Results/figures/06_zero_day_discovery.png
-    Results/figures/07_per_class_checkpoints.png
+    Results/figures/06_zeroday_comparison.png
+    Results/figures/07_per_class_final.png
 
 Usage
 -----
     python Scripts/train_fl_new_attack.py \\
-        --zero-day-attack XSS \\
-        --discovery-round 10 \\
-        --discovery-client 0 \\
+        --target-attack SQL_injection \\
+        --discovery-round 5 \\
         --rounds 20 --local-epochs 2 --n-clients 5 --sample-frac 0.3
 """
 
 import argparse
-import copy
 import json
 import logging
+import os
 import sys
+from collections import OrderedDict
+from dataclasses import replace as dc_replace
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
+import flwr as fl
+from flwr.common import (
+    FitIns,
+    ndarrays_to_parameters,
+    parameters_to_ndarrays,
+)
+from flwr.server.strategy import FedAvg
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -58,115 +81,105 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
-from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from models import build_model
 from preprocess import DATA_PATH, load_and_preprocess
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
+logging.getLogger("flwr").setLevel(logging.WARNING)
+os.environ.setdefault("RAY_DEDUP_LOGS", "0")
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT        = Path(__file__).resolve().parent.parent
 RESULTS_DIR = ROOT / "Results"
 FIGURES_DIR = RESULTS_DIR / "figures"
 
 
 # ---------------------------------------------------------------------------
-# Data partitioning for this scenario
+# Data partitioning
 # ---------------------------------------------------------------------------
 
-def make_zero_day_partitions(
-    X: np.ndarray,
-    y: np.ndarray,
-    le,
-    zero_day_attack: str,
-    n_clients: int = 5,
-    server_frac: float = 0.10,
-    seed: int = 42,
-) -> tuple:
+def make_iid_partitions(X, y, le, target_attack, n_clients=5,
+                         server_frac=0.10, discovery_frac=0.80, seed=42):
     """
-    Partition data for the zero-day discovery scenario.
+    IID partition where every client starts with ALL attack classes.
+
+    A fraction *discovery_frac* of target-attack samples is withheld as a
+    discovery pool to be injected into Client 0 after the discovery round.
+    The remaining (1-discovery_frac) is included in the regular IID split so
+    the global model already has weak baseline detection from round 1.
 
     Returns
     -------
-    clients_base_data  : list of (X_i, y_i) — each client's pre-discovery data
-                         (Normal + all standard attacks, NO zero-day samples)
-    zero_day_pool      : (X_zd, y_zd) — training-split zero-day samples reserved
-                         for the discovery event
-    server_eval        : (X_eval, y_eval) — 10 % server evaluation set with ALL
-                         classes including zero-day
-    zero_day_class_idx : integer label of the zero-day attack
+    clients_base  : list of (X_i, y_i) — each client's initial training data
+    discovery_pool: (X_pool, y_pool) — extra samples added to Client 0 post-event
+    server_eval   : (X_eval, y_eval) — held-out evaluation set (all classes)
+    target_idx    : integer label of the target attack
     """
     class_names = list(le.classes_)
-    if zero_day_attack not in class_names:
-        closest = [c for c in class_names if zero_day_attack.lower() in c.lower()]
+    if target_attack not in class_names:
+        closest = [c for c in class_names if target_attack.lower() in c.lower()]
         if closest:
-            zero_day_attack = closest[0]
-            log.warning("Zero-day attack name adjusted to '%s'", zero_day_attack)
+            target_attack = closest[0]
+            log.warning("Attack name adjusted to '%s'", target_attack)
         else:
             raise ValueError(
-                f"Attack '{zero_day_attack}' not found.\n"
-                f"Available classes: {class_names}"
+                f"Attack '{target_attack}' not found. "
+                f"Available: {class_names}"
             )
-    zero_day_idx = int(le.transform([zero_day_attack])[0])
-    log.info("Zero-day attack: '%s'  (class index %d)", zero_day_attack, zero_day_idx)
+    target_idx = int(le.transform([target_attack])[0])
+    log.info("Target attack: '%s'  (class index %d)", target_attack, target_idx)
 
-    # ── 1. Server evaluation set (stratified, 10 %, all classes) ─────────
+    # ── 1. Server eval set (stratified 10 %, all classes) ─────────────────
     all_idx = np.arange(len(X))
-    idx_train, idx_server = train_test_split(
+    idx_tr, idx_sv = train_test_split(
         all_idx, test_size=server_frac, stratify=y, random_state=seed
     )
-    X_server, y_server = X[idx_server], y[idx_server]
-    X_tr,    y_tr    = X[idx_train],  y[idx_train]
+    X_sv, y_sv = X[idx_sv], y[idx_sv]
+    X_tr, y_tr = X[idx_tr], y[idx_tr]
 
-    log.info(
-        "Server eval set: %d samples  (zero-day samples in eval: %d)",
-        len(y_server), int((y_server == zero_day_idx).sum()),
+    log.info("Server eval: %d samples (target in eval: %d)",
+             len(y_sv), int((y_sv == target_idx).sum()))
+
+    # ── 2. Split target-attack samples: base (20%) vs discovery pool (80%) ─
+    ta_mask  = y_tr == target_idx
+    X_ta     = X_tr[ta_mask];   y_ta    = y_tr[ta_mask]
+    X_other  = X_tr[~ta_mask];  y_other = y_tr[~ta_mask]
+
+    X_ta_base, X_pool, y_ta_base, y_pool = train_test_split(
+        X_ta, y_ta, test_size=discovery_frac, random_state=seed
     )
+    log.info("Target-attack split: %d base (IID) | %d discovery pool",
+             len(y_ta_base), len(y_pool))
 
-    # ── 2. Separate zero-day from standard traffic in training pool ────────
-    std_mask = y_tr != zero_day_idx
-    zd_mask  = y_tr == zero_day_idx
-    X_std, y_std = X_tr[std_mask], y_tr[std_mask]
-    X_zd,  y_zd  = X_tr[zd_mask],  y_tr[zd_mask]
+    # ── 3. IID split of (all other traffic + 20% target attack) ───────────
+    X_iid = np.concatenate([X_other, X_ta_base])
+    y_iid = np.concatenate([y_other, y_ta_base])
 
-    log.info(
-        "Training pool: %d standard samples | %d zero-day samples (held for discovery)",
-        len(y_std), len(y_zd),
-    )
+    rng    = np.random.default_rng(seed)
+    perm   = rng.permutation(len(X_iid))
+    splits = np.array_split(perm, n_clients)
+    clients_base = [(X_iid[idx], y_iid[idx]) for idx in splits]
 
-    # ── 3. IID split of standard data across clients ──────────────────────
-    rng = np.random.default_rng(seed)
-    perm = rng.permutation(len(X_std))
-    client_splits = np.array_split(perm, n_clients)
-    clients_base_data = [
-        (X_std[idx], y_std[idx]) for idx in client_splits
-    ]
+    for i, (Xc, yc) in enumerate(clients_base):
+        ta_cnt = int((yc == target_idx).sum())
+        log.info("Client %d: %d samples  (target class: %d samples)",
+                 i, len(Xc), ta_cnt)
 
-    for i, (Xc, yc) in enumerate(clients_base_data):
-        present_attacks = sorted({
-            class_names[lab] for lab in np.unique(yc)
-            if class_names[lab] != "Normal"
-        })
-        log.info("Client %d: %d samples | attacks: %s", i, len(Xc), present_attacks)
-
-    return clients_base_data, (X_zd, y_zd), (X_server, y_server), zero_day_idx
+    return clients_base, (X_pool, y_pool), (X_sv, y_sv), target_idx
 
 
 # ---------------------------------------------------------------------------
-# Training / aggregation helpers (self-contained — no dependency on other
-# training scripts so this file can be run independently)
+# Helpers
 # ---------------------------------------------------------------------------
 
-def _make_balanced_loader(X: np.ndarray, y: np.ndarray, batch_size: int) -> DataLoader:
-    """DataLoader with per-class balanced sampling."""
-    class_counts = np.bincount(y).astype(np.float64)
-    weights = 1.0 / np.maximum(class_counts[y], 1.0)
+def _make_balanced_loader(X, y, batch_size):
+    counts  = np.bincount(y).astype(np.float64)
+    weights = 1.0 / np.maximum(counts[y], 1.0)
     sampler = WeightedRandomSampler(
-        weights=torch.from_numpy(weights.astype(np.float32)),
-        num_samples=len(y),
-        replacement=True,
+        torch.from_numpy(weights.astype(np.float32)), len(y), replacement=True
     )
     ds = TensorDataset(
         torch.from_numpy(X), torch.from_numpy(y.astype(np.int64))
@@ -174,239 +187,404 @@ def _make_balanced_loader(X: np.ndarray, y: np.ndarray, batch_size: int) -> Data
     return DataLoader(ds, batch_size=batch_size, sampler=sampler, num_workers=0)
 
 
-def _local_train(
-    model: nn.Module,
-    X: np.ndarray,
-    y: np.ndarray,
-    local_epochs: int,
-    batch_size: int,
-    lr: float,
-    device: torch.device,
-    global_params: list | None = None,
-    mu: float = 0.01,
-) -> nn.Module:
-    """FedProx local training with balanced sampling."""
-    loader = _make_balanced_loader(X, y, batch_size)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
-
-    model.train()
-    for _ in range(local_epochs):
-        for xb, yb in loader:
-            xb, yb = xb.to(device), yb.to(device)
-            optimizer.zero_grad()
-            loss = criterion(model(xb), yb)
-            if mu > 0.0 and global_params is not None:
-                prox = sum(
-                    ((lp - gp.detach()) ** 2).sum()
-                    for lp, gp in zip(model.parameters(), global_params)
-                )
-                loss = loss + (mu / 2.0) * prox
-            loss.backward()
-            optimizer.step()
-    return model
-
-
 @torch.no_grad()
-def _predict(
-    model: nn.Module, X: np.ndarray, device: torch.device, batch_size: int = 2048
-) -> np.ndarray:
+def _predict(model, X, device, batch_size=2048):
     model.eval()
     preds = []
-    for start in range(0, len(X), batch_size):
-        xb = torch.from_numpy(X[start : start + batch_size]).to(device)
+    for s in range(0, len(X), batch_size):
+        xb = torch.from_numpy(X[s:s + batch_size]).to(device)
         preds.extend(model(xb).argmax(1).cpu().numpy())
     return np.array(preds)
 
 
-def _fedavg(
-    global_model: nn.Module,
-    client_models: list[nn.Module],
-    client_sizes: list[int],
-    discovery_client: int | None = None,
-    discovery_active: bool = False,
-    discovery_boost: float = 1.0,
-) -> nn.Module:
-    """FedAvg with optional boost for the discovering client.
-
-    When discovery_active=True and discovery_boost>1, the discovering client's
-    effective sample count is multiplied by *discovery_boost* so that its
-    newly acquired zero-day knowledge is not overwhelmed by the majority of
-    clients that have never seen the attack.
-    """
-    effective_sizes = [
-        n * (discovery_boost if (discovery_active and i == discovery_client) else 1.0)
-        for i, n in enumerate(client_sizes)
-    ]
-    total = sum(effective_sizes)
-    new_state = copy.deepcopy(global_model.state_dict())
-    for key in new_state:
-        new_state[key] = sum(
-            m.state_dict()[key].float() * (n / total)
-            for m, n in zip(client_models, effective_sizes)
-        )
-    global_model.load_state_dict(new_state)
-    return global_model
+def _params_to_model(ndarrays, input_dim, num_classes, device):
+    model = build_model(input_dim, num_classes).to(device)
+    state_dict = OrderedDict(
+        (k, torch.from_numpy(np.copy(v)))
+        for k, v in zip(model.state_dict().keys(), ndarrays)
+    )
+    model.load_state_dict(state_dict, strict=True)
+    return model
 
 
-def _eval_on_server(
-    model: nn.Module,
-    X_eval: np.ndarray,
-    y_eval: np.ndarray,
-    device: torch.device,
-    num_classes: int,
-    class_names: list[str],
-    zero_day_idx: int,
-) -> dict:
-    preds = _predict(model, X_eval, device)
+def _eval_on_server(model, X_eval, y_eval, device, num_classes,
+                    class_names, target_idx):
+    preds  = _predict(model, X_eval, device)
     labels = list(range(num_classes))
-    per_class = f1_score(y_eval, preds, average=None, zero_division=0, labels=labels)
+    pc_f1  = f1_score(y_eval, preds, average=None,
+                      zero_division=0, labels=labels)
     return {
-        "accuracy":    float(accuracy_score(y_eval, preds)),
-        "macro_f1":    float(f1_score(y_eval, preds, average="macro",    zero_division=0, labels=labels)),
-        "weighted_f1": float(f1_score(y_eval, preds, average="weighted", zero_division=0, labels=labels)),
-        "zero_day_f1": float(per_class[zero_day_idx]),
-        "zero_day_precision": float(
-            precision_score(y_eval, preds, average=None, zero_division=0, labels=labels)[zero_day_idx]
-        ),
-        "zero_day_recall": float(
-            recall_score(y_eval, preds, average=None, zero_division=0, labels=labels)[zero_day_idx]
-        ),
-        "per_class_f1": {class_names[i]: float(v) for i, v in enumerate(per_class)},
+        "accuracy":         float(accuracy_score(y_eval, preds)),
+        "macro_f1":         float(f1_score(y_eval, preds, average="macro",
+                                            zero_division=0, labels=labels)),
+        "weighted_f1":      float(f1_score(y_eval, preds, average="weighted",
+                                            zero_division=0, labels=labels)),
+        "target_f1":        float(pc_f1[target_idx]),
+        "target_precision": float(precision_score(y_eval, preds, average=None,
+                                                   zero_division=0,
+                                                   labels=labels)[target_idx]),
+        "target_recall":    float(recall_score(y_eval, preds, average=None,
+                                                zero_division=0,
+                                                labels=labels)[target_idx]),
+        "per_class_f1":     {class_names[i]: float(v)
+                              for i, v in enumerate(pc_f1)},
     }
 
 
 # ---------------------------------------------------------------------------
-# Main experiment
+# Flower client (shared by both strategies)
 # ---------------------------------------------------------------------------
 
-def run(args: argparse.Namespace) -> dict:
+class DiscoveryClient(fl.client.NumPyClient):
+    """
+    Standard Flower client for the discovery scenario.
+
+    The server injects two config keys each round:
+      proximal_mu      – FedProx regularisation coefficient (0.0 = disabled)
+      discovery_active – whether this round is post-discovery
+    """
+
+    def __init__(self, cid, X_base, y_base, X_pool, y_pool,
+                 num_classes, input_dim, local_epochs, batch_size, lr):
+        self.cid          = int(cid)
+        self.X_base       = X_base
+        self.y_base       = y_base
+        self.X_pool       = X_pool   # None for non-discovery clients
+        self.y_pool       = y_pool
+        self.device       = torch.device("cpu")
+        self.model        = build_model(input_dim, num_classes).to(self.device)
+        self.local_epochs = local_epochs
+        self.batch_size   = batch_size
+        self.lr           = lr
+
+    def get_parameters(self, config):
+        return [v.cpu().numpy() for _, v in self.model.state_dict().items()]
+
+    def set_parameters(self, parameters):
+        state_dict = OrderedDict(
+            (k, torch.from_numpy(np.copy(v)))
+            for k, v in zip(self.model.state_dict().keys(), parameters)
+        )
+        self.model.load_state_dict(state_dict, strict=True)
+
+    def fit(self, parameters, config):
+        self.set_parameters(parameters)
+        mu               = float(config.get("proximal_mu",    0.0))
+        discovery_active = bool(config.get("discovery_active", False))
+
+        if discovery_active and self.X_pool is not None:
+            X = np.concatenate([self.X_base, self.X_pool])
+            y = np.concatenate([self.y_base, self.y_pool])
+        else:
+            X, y = self.X_base, self.y_base
+
+        global_params = [p.clone().detach() for p in self.model.parameters()]
+        loader    = _make_balanced_loader(X, y, self.batch_size)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(self.model.parameters(),
+                                     lr=self.lr, weight_decay=1e-4)
+
+        self.model.train()
+        for _ in range(self.local_epochs):
+            for xb, yb in loader:
+                xb, yb = xb.to(self.device), yb.to(self.device)
+                optimizer.zero_grad()
+                loss = criterion(self.model(xb), yb)
+                if mu > 0.0:
+                    prox = sum(
+                        ((lp - gp) ** 2).sum()
+                        for lp, gp in zip(self.model.parameters(), global_params)
+                    )
+                    loss = loss + (mu / 2.0) * prox
+                loss.backward()
+                optimizer.step()
+
+        return self.get_parameters({}), len(X), {}
+
+    def evaluate(self, parameters, config):
+        self.set_parameters(parameters)
+        preds = _predict(self.model, self.X_base, self.device)
+        return (0.0, len(self.X_base), {
+            "accuracy": float(accuracy_score(self.y_base, preds)),
+        })
+
+
+# ---------------------------------------------------------------------------
+# FL Strategy 1 — FedAvg (baseline, mu=0)
+# ---------------------------------------------------------------------------
+
+class FedAvgStrategy(FedAvg):
+    """Standard FedAvg (mu=0 = pure FedAvg, no FedProx constraint)."""
+
+    def __init__(self, discovery_client_id, discovery_round,
+                 proximal_mu=0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.discovery_client_id = int(discovery_client_id)
+        self.discovery_round     = int(discovery_round)
+        self.proximal_mu         = float(proximal_mu)
+
+    def configure_fit(self, server_round, parameters, client_manager):
+        base             = super().configure_fit(server_round, parameters, client_manager)
+        discovery_active = server_round > self.discovery_round
+        return [
+            (cp, FitIns(fi.parameters, {
+                "proximal_mu":      self.proximal_mu,
+                "discovery_active": discovery_active,
+            }))
+            for cp, fi in base
+        ]
+
+
+# ---------------------------------------------------------------------------
+# FL Strategy 2 — FedDiv (Divergence-Weighted FedAvg)
+# ---------------------------------------------------------------------------
+
+class FedDivStrategy(FedAvg):
+    """
+    Divergence-Weighted FedAvg.
+
+    Each round the contribution of client i is proportional to the L2
+    distance between its locally trained model and the current global model:
+
+        effective_weight_i  ∝  ||w_i_local − w_global||₂
+
+    This is self-organising: when Client 0 absorbs the large discovery pool,
+    its model diverges noticeably and automatically receives more influence
+    in aggregation — no hand-tuned boost factor required.
+    """
+
+    def __init__(self, discovery_client_id, discovery_round,
+                 proximal_mu=0.0, **kwargs):
+        super().__init__(**kwargs)
+        self.discovery_client_id = int(discovery_client_id)
+        self.discovery_round     = int(discovery_round)
+        self.proximal_mu         = float(proximal_mu)
+        init_params = kwargs.get("initial_parameters")
+        self._global_ndarrays = (parameters_to_ndarrays(init_params)
+                                 if init_params is not None else None)
+
+    def configure_fit(self, server_round, parameters, client_manager):
+        base             = super().configure_fit(server_round, parameters, client_manager)
+        discovery_active = server_round > self.discovery_round
+        return [
+            (cp, FitIns(fi.parameters, {
+                "proximal_mu":      self.proximal_mu,
+                "discovery_active": discovery_active,
+            }))
+            for cp, fi in base
+        ]
+
+    def aggregate_fit(self, server_round, results, failures):
+        if not results:
+            return None, {}
+
+        if self._global_ndarrays is None:
+            agg = super().aggregate_fit(server_round, results, failures)
+            if agg[0] is not None:
+                self._global_ndarrays = parameters_to_ndarrays(agg[0])
+            return agg
+
+        # Compute L2 divergence of each client from the current global model
+        divergences = []
+        for _, fit_res in results:
+            local_nds = parameters_to_ndarrays(fit_res.parameters)
+            div = float(np.sqrt(sum(
+                np.sum((lp.astype(np.float64) - gp.astype(np.float64)) ** 2)
+                for lp, gp in zip(local_nds, self._global_ndarrays)
+            )))
+            divergences.append(max(div, 1e-8))
+
+        total_div = sum(divergences)
+        total_n   = sum(r.num_examples for _, r in results)
+
+        # Re-weight: each client's share ∝ its divergence
+        boosted = []
+        for (proxy, fit_res), div in zip(results, divergences):
+            effective_n = max(int(round((div / total_div) * total_n)), 1)
+            boosted.append((proxy, dc_replace(fit_res, num_examples=effective_n)))
+
+        agg = super().aggregate_fit(server_round, boosted, failures)
+        if agg[0] is not None:
+            self._global_ndarrays = parameters_to_ndarrays(agg[0])
+        return agg
+
+
+# ---------------------------------------------------------------------------
+# Single strategy runner
+# ---------------------------------------------------------------------------
+
+def _run_strategy(strategy_name, strategy, client_fn, n_clients, n_rounds,
+                  X_eval, y_eval, input_dim, num_classes,
+                  class_names, target_idx, device):
+    """Run one Flower simulation and return (per_round_metrics, final_ndarrays)."""
+
+    per_round_metrics = []
+    _last_params      = [None]
+
+    def evaluate_fn(server_round, parameters, config):
+        # Flower passes NDArrays (list) directly to evaluate_fn — no conversion needed
+        ndarrays = parameters if isinstance(parameters, list) else parameters_to_ndarrays(parameters)
+        model    = _params_to_model(ndarrays, input_dim, num_classes, device)
+        phase    = ("pre_discovery"
+                    if server_round <= strategy.discovery_round
+                    else "post_discovery")
+        m = _eval_on_server(model, X_eval, y_eval, device,
+                             num_classes, class_names, target_idx)
+        m.update({
+            "round":                  server_round,
+            "phase":                  phase,
+            "discovery_active":       server_round > strategy.discovery_round,
+            "rounds_since_discovery": max(0, server_round - strategy.discovery_round),
+        })
+        per_round_metrics.append(m)
+        _last_params[0] = ndarrays
+        log.info("  [%s] R%02d [%s]  target_F1=%.4f  macro_F1=%.4f  acc=%.4f",
+                 strategy_name, server_round, phase,
+                 m["target_f1"], m["macro_f1"], m["accuracy"])
+        return 0.0, {"target_f1": m["target_f1"], "macro_f1": m["macro_f1"]}
+
+    strategy.evaluate_fn = evaluate_fn
+
+    fl.simulation.start_simulation(
+        client_fn=client_fn,
+        num_clients=n_clients,
+        config=fl.server.ServerConfig(num_rounds=n_rounds),
+        strategy=strategy,
+        ray_init_args={"ignore_reinit_error": True},
+    )
+
+    return per_round_metrics, _last_params[0]
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def run(args):
     RESULTS_DIR.mkdir(exist_ok=True)
 
-    # ── Load data ──────────────────────────────────────────────────────────
     X, y, le = load_and_preprocess(DATA_PATH, sample_frac=args.sample_frac)
-    class_names  = list(le.classes_)
+    class_names = list(le.classes_)
     num_classes  = len(class_names)
     input_dim    = X.shape[1]
+    device       = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # ── Partition data ─────────────────────────────────────────────────────
-    clients_base, (X_zd, y_zd), (X_eval, y_eval), zd_idx = make_zero_day_partitions(
-        X, y, le,
-        zero_day_attack=args.zero_day_attack,
-        n_clients=args.n_clients,
-        server_frac=args.server_frac,
-        seed=42,
-    )
-    zero_day_name = class_names[zd_idx]
+    clients_base, (X_pool, y_pool), (X_eval, y_eval), target_idx = \
+        make_iid_partitions(
+            X, y, le,
+            target_attack=args.target_attack,
+            n_clients=args.n_clients,
+            server_frac=args.server_frac,
+            discovery_frac=args.discovery_frac,
+            seed=42,
+        )
+    target_name = class_names[target_idx]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    mu     = args.mu
     log.info(
-        "Device: %s | Clients: %d | Rounds: %d | Local epochs: %d | "
-        "FedProx μ=%.4f | Discovery: client %d at round %d",
-        device, args.n_clients, args.rounds, args.local_epochs, mu,
+        "Flower %s | Device: %s | Clients: %d | Rounds: %d | "
+        "Local epochs: %d | mu=%.4f | Discovery: client %d at round %d",
+        fl.__version__, device, args.n_clients, args.rounds,
+        args.local_epochs, args.mu,
         args.discovery_client, args.discovery_round,
     )
-    log.info("Zero-day attack: '%s'", zero_day_name)
 
-    # ── Initialise global model ────────────────────────────────────────────
-    global_model = build_model(input_dim, num_classes).to(device)
+    init_ndarrays   = [v.cpu().numpy() for _, v in
+                       build_model(input_dim, num_classes).state_dict().items()]
+    init_parameters = ndarrays_to_parameters(init_ndarrays)
 
-    per_round_metrics: list[dict] = []
+    def client_fn(cid):
+        cid_int = int(cid)
+        Xb, yb  = clients_base[cid_int]
+        xp = X_pool if cid_int == args.discovery_client else None
+        yp = y_pool if cid_int == args.discovery_client else None
+        return DiscoveryClient(
+            cid_int, Xb, yb, xp, yp,
+            num_classes, input_dim,
+            args.local_epochs, args.batch_size, args.lr,
+        ).to_client()
 
-    # ── FL rounds ─────────────────────────────────────────────────────────
+    common_kwargs = dict(
+        fraction_fit=1.0,
+        fraction_evaluate=0.0,
+        min_fit_clients=args.n_clients,
+        min_available_clients=args.n_clients,
+        initial_parameters=init_parameters,
+    )
+
+    # ─── Run 1: FedAvg ────────────────────────────────────────────────────
     log.info("\n" + "=" * 70)
-    log.info("FL TRAINING  (zero-day='%s'  discovery=round %d  client %d)",
-             zero_day_name, args.discovery_round, args.discovery_client)
+    log.info("STRATEGY 1/2 : FedAvg  (mu=%.4f)", args.mu)
     log.info("=" * 70)
 
-    for rnd in tqdm(range(1, args.rounds + 1), desc="FL rounds"):
+    fedavg_strategy = FedAvgStrategy(
+        discovery_client_id=args.discovery_client,
+        discovery_round=args.discovery_round,
+        proximal_mu=args.mu,
+        **common_kwargs,
+    )
+    fedavg_metrics, fedavg_params = _run_strategy(
+        "FedAvg", fedavg_strategy, client_fn,
+        args.n_clients, args.rounds,
+        X_eval, y_eval, input_dim, num_classes,
+        class_names, target_idx, device,
+    )
 
-        discovery_active = rnd > args.discovery_round
-        phase = "pre_discovery" if not discovery_active else "post_discovery"
+    # ─── Run 2: FedDiv ────────────────────────────────────────────────────
+    log.info("\n" + "=" * 70)
+    log.info("STRATEGY 2/2 : FedDiv  (divergence-weighted, mu=%.4f)", args.mu)
+    log.info("=" * 70)
 
-        # Build each client's dataset for this round
-        client_datasets: list[tuple[np.ndarray, np.ndarray]] = []
-        for i, (Xc, yc) in enumerate(clients_base):
-            if discovery_active and i == args.discovery_client:
-                # Discovering client now has zero-day samples
-                Xc = np.concatenate([Xc, X_zd], axis=0)
-                yc = np.concatenate([yc, y_zd], axis=0)
-            client_datasets.append((Xc, yc))
+    feddiv_strategy = FedDivStrategy(
+        discovery_client_id=args.discovery_client,
+        discovery_round=args.discovery_round,
+        proximal_mu=args.mu,
+        **common_kwargs,
+    )
+    feddiv_metrics, feddiv_params = _run_strategy(
+        "FedDiv", feddiv_strategy, client_fn,
+        args.n_clients, args.rounds,
+        X_eval, y_eval, input_dim, num_classes,
+        class_names, target_idx, device,
+    )
 
-        # Local training (FedProx)
-        # Post-discovery: disable FedProx for the discovering client so the new
-        # attack knowledge is not pulled back toward the (zero-day-ignorant) global
-        # model.  All other clients keep the standard μ.
-        global_params = [p.detach().clone() for p in global_model.parameters()]
-        client_models, client_sizes = [], []
-        for ci, (Xc, yc) in enumerate(client_datasets):
-            is_discoverer = discovery_active and ci == args.discovery_client
-            mu_ci = 0.0 if is_discoverer else mu
-            m = copy.deepcopy(global_model)
-            m = _local_train(
-                m, Xc, yc, args.local_epochs, args.batch_size, args.lr,
-                device, global_params=global_params, mu=mu_ci,
-            )
-            client_models.append(m)
-            client_sizes.append(len(Xc))
+    # ─── Final reports ────────────────────────────────────────────────────
+    for name, params in [("FedAvg", fedavg_params), ("FedDiv", feddiv_params)]:
+        model = _params_to_model(params, input_dim, num_classes, device)
+        preds = _predict(model, X_eval, device)
+        log.info("\n=== FINAL GLOBAL MODEL — %s (server eval set) ===", name)
+        print(classification_report(y_eval, preds,
+                                     target_names=class_names, zero_division=0))
+        torch.save(model.state_dict(),
+                   RESULTS_DIR / f"new_attack_{name.lower()}_model.pt")
 
-        # Federated aggregation
-        global_model = _fedavg(
-            global_model, client_models, client_sizes,
-            discovery_client=args.discovery_client,
-            discovery_active=discovery_active,
-            discovery_boost=args.discovery_boost,
-        )
-
-        # Evaluate on server set
-        metrics = _eval_on_server(
-            global_model, X_eval, y_eval, device, num_classes, class_names, zd_idx
-        )
-        metrics.update({
-            "round": rnd,
-            "phase": phase,
-            "discovery_active": discovery_active,
-            "rounds_since_discovery": max(0, rnd - args.discovery_round),
-        })
-        per_round_metrics.append(metrics)
-
-        log.info(
-            "  Round %02d [%s]  zero_day_F1=%.4f  macro_F1=%.4f  acc=%.4f",
-            rnd, phase, metrics["zero_day_f1"], metrics["macro_f1"], metrics["accuracy"],
-        )
-
-    # ── Final evaluation ───────────────────────────────────────────────────
-    final_preds = _predict(global_model, X_eval, device)
-    log.info("\n=== FINAL GLOBAL MODEL (server eval set) ===")
-    print(classification_report(
-        y_eval, final_preds, target_names=class_names, zero_division=0
-    ))
-
-    # ── Save results ───────────────────────────────────────────────────────
     results = {
         "config": {
-            "zero_day_attack":  zero_day_name,
+            "target_attack":    target_name,
             "discovery_round":  args.discovery_round,
             "discovery_client": args.discovery_client,
-            "discovery_boost":  args.discovery_boost,
+            "discovery_frac":   args.discovery_frac,
             "n_clients":        args.n_clients,
             "rounds":           args.rounds,
             "local_epochs":     args.local_epochs,
-            "mu":               mu,
+            "mu":               args.mu,
             "sample_frac":      args.sample_frac,
             "server_frac":      args.server_frac,
         },
         "class_names": class_names,
-        "per_round_metrics": per_round_metrics,
-        "final_metrics": per_round_metrics[-1],
+        "framework":   f"flwr {fl.__version__}",
+        "fedavg": {
+            "per_round_metrics": fedavg_metrics,
+            "final_metrics":     fedavg_metrics[-1],
+        },
+        "feddiv": {
+            "per_round_metrics": feddiv_metrics,
+            "final_metrics":     feddiv_metrics[-1],
+        },
     }
 
     out = RESULTS_DIR / "new_attack_results.json"
     out.write_text(json.dumps(results, indent=2))
-    torch.save(global_model.state_dict(), RESULTS_DIR / "new_attack_global_model.pt")
-    log.info("Results → %s", out)
-    log.info("Model   → %s", RESULTS_DIR / "new_attack_global_model.pt")
+    log.info("Results -> %s", out)
 
     _generate_figures(results)
     return results
@@ -416,179 +594,164 @@ def run(args: argparse.Namespace) -> dict:
 # Figures
 # ---------------------------------------------------------------------------
 
-def _generate_figures(results: dict) -> None:
+def _generate_figures(results):
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
 
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    cfg       = results["config"]
-    zd_name   = cfg["zero_day_attack"]
-    disc_rnd  = cfg["discovery_round"]
-    rounds_m  = results["per_round_metrics"]
+    cfg         = results["config"]
+    target_name = cfg["target_attack"]
+    disc_rnd    = cfg["discovery_round"]
     class_names = results["class_names"]
 
-    rounds       = [m["round"]        for m in rounds_m]
-    zd_f1        = [m["zero_day_f1"]  for m in rounds_m]
-    macro_f1     = [m["macro_f1"]     for m in rounds_m]
-    accuracy     = [m["accuracy"]     for m in rounds_m]
-    zd_precision = [m.get("zero_day_precision", 0) for m in rounds_m]
-    zd_recall    = [m.get("zero_day_recall",    0) for m in rounds_m]
+    fa = results["fedavg"]["per_round_metrics"]
+    fd = results["feddiv"]["per_round_metrics"]
+
+    rounds    = [m["round"]     for m in fa]
+    fa_tgt    = [m["target_f1"] for m in fa]
+    fd_tgt    = [m["target_f1"] for m in fd]
+    fa_macro  = [m["macro_f1"]  for m in fa]
+    fd_macro  = [m["macro_f1"]  for m in fd]
+    fa_acc    = [m["accuracy"]  for m in fa]
+    fd_acc    = [m["accuracy"]  for m in fd]
 
     plt.rcParams.update({
-        "font.family": "DejaVu Sans",
-        "axes.spines.top": False,
+        "font.family":       "DejaVu Sans",
+        "axes.spines.top":   False,
         "axes.spines.right": False,
-        "axes.grid": True,
-        "grid.alpha": 0.25,
+        "axes.grid":         True,
+        "grid.alpha":        0.25,
     })
 
-    # ── Figure 6: Zero-day discovery curve ────────────────────────────────
-    fig, axes = plt.subplots(2, 1, figsize=(11, 9), sharex=True,
+    # Figure 06 — Target-attack F1 + global metrics, FedAvg vs FedDiv
+    fig, axes = plt.subplots(2, 1, figsize=(12, 9), sharex=True,
                              gridspec_kw={"hspace": 0.08})
 
-    # Top panel: zero-day F1 / precision / recall
     ax = axes[0]
-    ax.plot(rounds, zd_f1,        "o-",  color="#F44336", linewidth=2.2, markersize=5,
-            label=f"'{zd_name}' F1")
-    ax.plot(rounds, zd_precision, "s--", color="#FF9800", linewidth=1.6, markersize=4,
-            label=f"'{zd_name}' Precision", alpha=0.85)
-    ax.plot(rounds, zd_recall,    "^--", color="#9C27B0", linewidth=1.6, markersize=4,
-            label=f"'{zd_name}' Recall",    alpha=0.85)
-
-    ax.axvline(disc_rnd + 0.5, color="#212121", linewidth=1.8, linestyle="--", zorder=5)
+    ax.plot(rounds, fa_tgt, "o-", color="#2196F3", lw=2.2, ms=5,
+            label="FedAvg — target F1")
+    ax.plot(rounds, fd_tgt, "s-", color="#F44336", lw=2.2, ms=5,
+            label="FedDiv — target F1")
+    ax.axvline(disc_rnd + 0.5, color="#212121", lw=1.8, ls="--", zorder=5)
+    y_ann = max(max(fa_tgt), max(fd_tgt)) * 0.55
     ax.annotate(
-        f"← Discovery event\n  (Client {cfg['discovery_client']} receives\n"
-        f"  '{zd_name}' samples)",
-        xy=(disc_rnd + 0.5, max(zd_f1) * 0.6),
-        xytext=(disc_rnd + 1.5, max(zd_f1) * 0.45 + 0.1),
+        f"<- Discovery event\n  Client {cfg['discovery_client']} gets\n"
+        f"  {target_name} pool",
+        xy=(disc_rnd + 0.5, y_ann),
+        xytext=(disc_rnd + 1.2, max(y_ann - 0.15, 0.05)),
         fontsize=9,
         arrowprops=dict(arrowstyle="->", color="#212121"),
         bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.8),
     )
-
-    # Shade pre-/post-discovery regions
-    ax.axvspan(0.5, disc_rnd + 0.5, alpha=0.07, color="#F44336", label="Pre-discovery phase")
-    ax.axvspan(disc_rnd + 0.5, max(rounds) + 0.5, alpha=0.07, color="#4CAF50",
-               label="Post-discovery phase")
+    ax.axvspan(0.5, disc_rnd + 0.5, alpha=0.06, color="#F44336",
+               label="Pre-discovery")
+    ax.axvspan(disc_rnd + 0.5, max(rounds) + 0.5, alpha=0.06, color="#4CAF50",
+               label="Post-discovery")
     ax.set_ylim(-0.02, 1.05)
-    ax.set_ylabel("Score", fontsize=11)
+    ax.set_ylabel("F1 Score", fontsize=11)
     ax.set_title(
-        f"Zero-Day Attack Discovery via Federated Learning\n"
-        f"Attack: '{zd_name}' | {cfg['n_clients']} clients | "
-        f"FedProx μ={cfg['mu']} | Discovery boost ×{cfg.get('discovery_boost', 1.0)}",
+        f"FL Attack Discovery: FedAvg vs FedDiv  |  target='{target_name}'\n"
+        f"{cfg['n_clients']} clients  |  mu={cfg['mu']}  |  "
+        f"discovery_frac={cfg['discovery_frac']}",
         fontsize=12, fontweight="bold",
     )
-    ax.legend(fontsize=9, loc="upper left")
+    ax.legend(fontsize=10, loc="upper left")
 
-    # Bottom panel: global model health
     ax2 = axes[1]
-    ax2.plot(rounds, macro_f1, "o-",  color="#2196F3", linewidth=2.2, markersize=5,
-             label="Global Macro F1")
-    ax2.plot(rounds, accuracy,  "s--", color="#4CAF50", linewidth=1.8, markersize=4,
-             label="Global Accuracy", alpha=0.85)
-    ax2.axvline(disc_rnd + 0.5, color="#212121", linewidth=1.8, linestyle="--")
-    ax2.axvspan(0.5, disc_rnd + 0.5, alpha=0.07, color="#F44336")
-    ax2.axvspan(disc_rnd + 0.5, max(rounds) + 0.5, alpha=0.07, color="#4CAF50")
+    ax2.plot(rounds, fa_macro, "o-",  color="#2196F3", lw=1.8, ms=4,
+             label="FedAvg Macro F1")
+    ax2.plot(rounds, fd_macro, "s-",  color="#F44336", lw=1.8, ms=4,
+             label="FedDiv Macro F1")
+    ax2.plot(rounds, fa_acc,   "--",  color="#2196F3", lw=1.2, alpha=0.6,
+             label="FedAvg Accuracy")
+    ax2.plot(rounds, fd_acc,   "--",  color="#F44336", lw=1.2, alpha=0.6,
+             label="FedDiv Accuracy")
+    ax2.axvline(disc_rnd + 0.5, color="#212121", lw=1.8, ls="--")
+    ax2.axvspan(0.5, disc_rnd + 0.5, alpha=0.06, color="#F44336")
+    ax2.axvspan(disc_rnd + 0.5, max(rounds) + 0.5, alpha=0.06, color="#4CAF50")
     ax2.set_ylim(bottom=0)
     ax2.set_xlabel("FL Communication Round", fontsize=11)
     ax2.set_ylabel("Score", fontsize=11)
     ax2.legend(fontsize=9, loc="lower right")
-
     plt.tight_layout()
-    _savefig("06_zero_day_discovery.png")
+    _savefig("06_zeroday_comparison.png")
 
-    # ── Figure 7: Per-class F1 at key checkpoints ────────────────────────
-    checkpoints = {
-        f"Round {disc_rnd}\n(before discovery)":
-            next(m for m in rounds_m if m["round"] == disc_rnd),
-        f"Round {disc_rnd + 1}\n(1st round post-discovery)":
-            next((m for m in rounds_m if m["round"] == disc_rnd + 1), rounds_m[-1]),
-        f"Round {max(rounds)}\n(final)":
-            rounds_m[-1],
-    }
+    # Figure 07 — Per-class F1 at round 20, FedAvg vs FedDiv
+    fa_final = [fa[-1]["per_class_f1"].get(cn, 0.0) for cn in class_names]
+    fd_final = [fd[-1]["per_class_f1"].get(cn, 0.0) for cn in class_names]
 
-    valid_checkpoints = {k: v for k, v in checkpoints.items() if v is not None}
-    n_cp = len(valid_checkpoints)
-    colors = ["#F44336", "#FF9800", "#4CAF50"]
+    order        = sorted(range(len(class_names)),
+                          key=lambda i: fd_final[i], reverse=True)
+    sorted_names = [class_names[i] for i in order]
+    fa_sorted    = [fa_final[i] for i in order]
+    fd_sorted    = [fd_final[i] for i in order]
+    tgt_row      = sorted_names.index(target_name)
 
-    fig, ax = plt.subplots(figsize=(13, max(6, len(class_names) * 0.5)))
-    y_pos = np.arange(len(class_names))
-    bar_h = 0.8 / n_cp
+    y_pos = np.arange(len(sorted_names))
+    bar_h = 0.35
 
-    for j, (cp_label, cp_data) in enumerate(valid_checkpoints.items()):
-        f1_vals = [cp_data["per_class_f1"].get(cn, 0.0) for cn in class_names]
-        offset = (j - n_cp / 2 + 0.5) * bar_h
-        bars = ax.barh(
-            y_pos + offset, f1_vals, bar_h * 0.9,
-            color=colors[j], alpha=0.85, label=cp_label, zorder=3
-        )
+    fig, ax = plt.subplots(figsize=(13, max(6, len(class_names) * 0.6)))
+    ax.barh(y_pos - bar_h / 2, fa_sorted, bar_h,
+            color="#2196F350", edgecolor="#2196F3", lw=1.2,
+            label="FedAvg (round 20)", zorder=3)
+    ax.barh(y_pos + bar_h / 2, fd_sorted, bar_h,
+            color="#F4433650", edgecolor="#F44336", lw=1.2,
+            label="FedDiv (round 20)", zorder=3)
 
-    # Highlight the zero-day attack row
-    zd_y = class_names.index(zd_name)
-    ax.axhspan(zd_y - 0.5, zd_y + 0.5, alpha=0.12, color="#F44336", zorder=0)
-    ax.text(
-        1.01, zd_y, "← zero-day",
-        va="center", ha="left", fontsize=8,
-        color="#F44336", fontweight="bold",
-        transform=ax.get_yaxis_transform(),
-    )
+    ax.axhspan(tgt_row - 0.5, tgt_row + 0.5, alpha=0.10,
+               color="#FF9800", zorder=0)
+    ax.text(1.02, tgt_row, "<- DISCOVERY TARGET",
+            va="center", ha="left", fontsize=8, color="#E65100",
+            fontweight="bold", transform=ax.get_yaxis_transform())
 
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(class_names, fontsize=9)
-    ax.set_xlim(0, 1.10)
+    ax.set_yticklabels(sorted_names, fontsize=9)
+    ax.set_xlim(0, 1.15)
     ax.set_xlabel("F1 Score (server evaluation set)", fontsize=11)
     ax.set_title(
-        f"Per-Class F1 at Key Checkpoints\n"
-        f"Zero-Day: '{zd_name}' | Discovery at round {disc_rnd}",
+        f"Per-Class F1 at Round {max(rounds)} — FedAvg vs FedDiv\n"
+        f"Target: '{target_name}' | discovery at round {disc_rnd}",
         fontsize=12, fontweight="bold",
     )
-    ax.legend(fontsize=9, loc="lower right")
+    ax.legend(fontsize=10, loc="lower right")
     ax.grid(True, axis="x", alpha=0.25)
     plt.tight_layout()
-    _savefig("07_per_class_checkpoints.png")
+    _savefig("07_per_class_final.png")
 
 
-def _savefig(name: str) -> None:
+def _savefig(name):
     import matplotlib.pyplot as plt
     path = FIGURES_DIR / name
     plt.savefig(path, bbox_inches="tight", dpi=150)
     plt.close()
-    log.info("Saved figure → %s", path)
+    log.info("Saved figure -> %s", path)
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args():
     p = argparse.ArgumentParser(
-        description="FL zero-day attack discovery scenario.",
+        description="FL incremental attack discovery: FedAvg vs FedDiv.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    p.add_argument("--zero-day-attack", type=str, default="SQL_injection",
-                   help="Name of the attack to withhold as 'zero-day' (default: SQL_injection).")
-    p.add_argument("--discovery-round", type=int, default=5,
-                   help="Round after which the discovering client gets zero-day data (default: 5).")
-    p.add_argument("--discovery-client", type=int, default=0,
-                   help="Index of the client that discovers the zero-day attack (default: 0).")
-    p.add_argument("--rounds",       type=int,   default=20,
-                   help="Total FL rounds (default: 20).")
-    p.add_argument("--local-epochs", type=int,   default=2,
-                   help="Local training epochs per round (default: 2).")
-    p.add_argument("--n-clients",    type=int,   default=5,
-                   help="Number of FL clients (default: 5).")
-    p.add_argument("--batch-size",   type=int,   default=512)
-    p.add_argument("--lr",           type=float, default=5e-4)
-    p.add_argument("--mu",           type=float, default=0.01,
-                   help="FedProx proximal coefficient (default: 0.01).")
-    p.add_argument("--discovery-boost", type=float, default=4.0,
-                   help="Multiply discovering client weight in FedAvg post-event (default: 4.0).")
-    p.add_argument("--sample-frac",  type=float, default=0.3,
-                   help="Fraction of dataset to use (default: 0.3).")
-    p.add_argument("--server-frac",  type=float, default=0.10,
-                   help="Fraction of data reserved for server evaluation (default: 0.10).")
+    p.add_argument("--target-attack",    type=str,   default="SQL_injection",
+                   help="Attack class the discovering client encounters post-event.")
+    p.add_argument("--discovery-round",  type=int,   default=5)
+    p.add_argument("--discovery-client", type=int,   default=0)
+    p.add_argument("--discovery-frac",   type=float, default=0.80,
+                   help="Fraction of target-attack samples held as discovery pool.")
+    p.add_argument("--rounds",           type=int,   default=20)
+    p.add_argument("--local-epochs",     type=int,   default=2)
+    p.add_argument("--n-clients",        type=int,   default=5)
+    p.add_argument("--batch-size",       type=int,   default=512)
+    p.add_argument("--lr",               type=float, default=5e-4)
+    p.add_argument("--mu",               type=float, default=0.0,
+                   help="FedProx mu (0.0 = disabled, full client divergence).")
+    p.add_argument("--sample-frac",      type=float, default=0.3)
+    p.add_argument("--server-frac",      type=float, default=0.10)
     return p.parse_args()
 
 

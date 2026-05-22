@@ -869,40 +869,37 @@ footer {
 <!-- ══════════════════════ METHOD COMPARISON ════════════════════════ -->
 <section class="section">
   <div class="container">
-    <div class="tag">Design rationale</div>
-    <h2 class="section-title">FedAvg vs FedDiv — Design Choices</h2>
+    <div class="tag">How it works</div>
+    <h2 class="section-title">Standard vs. Smart Aggregation</h2>
     <p class="section-sub">
-      Both algorithms solve the same federated learning problem: train a shared intrusion-detection model across
-      heterogeneous edge nodes without centralising raw traffic data. Their design philosophies diverge at a single
-      critical question — <em>should the server treat all client updates as equally trustworthy?</em>
+      Both approaches train a shared cyber-threat detection model across distributed edge devices —
+      without ever sending raw network traffic to a central location. In both cases, each device trains
+      locally and the central server combines what was learned. The key difference lies in
+      <em>how intelligently that combination is made</em>, especially when a brand-new type of attack appears.
     </p>
 
     <div class="compare-grid">
       <div class="card compare-card fade-in">
-        <div class="compare-header compare-header--fa">FedAvg &mdash; Uniform Aggregation</div>
+        <div class="compare-header compare-header--fa">Standard Approach &mdash; Equal Trust</div>
         <div class="compare-body">
-          <p><strong>Core assumption:</strong> all clients observe the same data distribution. Aggregation weights are fixed proportionally to local dataset size — the server plays a purely passive role.</p>
+          <p><strong>The idea:</strong> every device is treated equally. The central server blends each device's learnings in proportion to how much data it processed — no judgment, no preferences.</p>
           <ul class="compare-list">
-            <li><strong>Aggregation:</strong> weighted mean of parameter tensors, weights&nbsp;∝&nbsp;|D<sub>i</sub>|</li>
-            <li><strong>Server role:</strong> stateless — stores no knowledge between rounds</li>
-            <li><strong>Client sampling:</strong> balanced mini-batches maintained throughout</li>
-            <li><strong>Heterogeneity:</strong> not modelled — clients are treated as i.i.d. workers</li>
-            <li><strong>New-class handling:</strong> relies on the averaging process to propagate new knowledge; minority signal is divided by the number of clients</li>
-            <li><strong>Privacy model:</strong> no server-side data required at any point</li>
+            <li><strong>How updates are combined:</strong> simple weighted average based on the volume of data each device handled</li>
+            <li><strong>Server role:</strong> coordinator — combines updates and sends the improved model back to all devices</li>
+            <li><strong>When a new threat appears:</strong> the new knowledge is spread equally across all devices; a device that has seen the new attack many times contributes no more than one that has barely seen it</li>
+            <li><strong>Data privacy:</strong> the server needs no labelled examples of its own — it only receives anonymised model updates</li>
           </ul>
         </div>
       </div>
       <div class="card compare-card fade-in">
-        <div class="compare-header compare-header--fd">FedDiv &mdash; Probe-Weighted Aggregation</div>
+        <div class="compare-header compare-header--fd">Smart Approach &mdash; Expertise-Weighted Trust</div>
         <div class="compare-body">
-          <p><strong>Core assumption:</strong> after a zero-day event, clients diverge in expertise. The server holds a small, labelled probe set and uses it to <em>measure</em> each client's competence on the target class before aggregating.</p>
+          <p><strong>The idea:</strong> after a new threat is discovered, some devices will encounter it far more than others, making them temporary experts. FedDiv identifies those experts and gives their updates more influence.</p>
           <ul class="compare-list">
-            <li><strong>Aggregation:</strong> w<sub>i</sub>&nbsp;∝&nbsp;div<sub>i</sub><sup>p</sup>, where div<sub>i</sub>&nbsp;=&nbsp;mean&nbsp;softmax<sub>SQL</sub>(f<sub>i</sub>(x<sub>probe</sub>))</li>
-            <li><strong>Server role:</strong> active — maintains a probe set and EMA divergence history</li>
-            <li><strong>Client sampling:</strong> switches to natural (unbalanced) sampling post-discovery to expose true data distribution</li>
-            <li><strong>Heterogeneity:</strong> explicitly exploited — a specialist client receives proportionally higher weight</li>
-            <li><strong>New-class handling:</strong> probe score surfaces the specialist; power&nbsp;p controls how sharply weight concentrates</li>
-            <li><strong>Privacy model:</strong> server holds &le;2k labelled samples (alarm-triggered, not raw telemetry); client data never leaves the node</li>
+            <li><strong>How updates are combined:</strong> weighted average where the weight reflects how well each device has learned to recognise the new threat — experts count more</li>
+            <li><strong>Server role:</strong> active coordinator — keeps a small reference set of confirmed threat examples and uses it every round to score each device's expertise</li>
+            <li><strong>When a new threat appears:</strong> the server continuously tests each device against the reference examples; the most expert device earns the highest influence in the next update cycle</li>
+            <li><strong>Data privacy:</strong> the reference set on the server is assembled from flagged security alerts only — never from raw client traffic; no device data is ever shared</li>
           </ul>
         </div>
       </div>
@@ -913,70 +910,70 @@ footer {
         <thead>
           <tr>
             <th>Design dimension</th>
-            <th class="cmp-fa">FedAvg</th>
-            <th class="cmp-fd">FedDiv</th>
+            <th class="cmp-fa">Standard (FedAvg)</th>
+            <th class="cmp-fd">Smart (FedDiv)</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Aggregation weight basis</td>
-            <td>Dataset size |D<sub>i</sub>|</td>
-            <td>Probe-based expertise score div<sub>i</sub><sup>p</sup></td>
+            <td>How device contributions are weighted</td>
+            <td>Proportional to the amount of data processed</td>
+            <td>Proportional to measured expertise on the new threat</td>
           </tr>
           <tr>
-            <td>Client heterogeneity model</td>
-            <td>i.i.d. assumed</td>
-            <td>Non-i.i.d. explicit — specialist vs generalist</td>
+            <td>Assumption about devices</td>
+            <td>All devices see a similar mix of traffic</td>
+            <td>Devices may specialise — some see the new attack far more than others</td>
           </tr>
           <tr>
-            <td>Server state between rounds</td>
-            <td>Global model only</td>
-            <td>Global model + EMA divergence scores + probe set</td>
+            <td>Server knowledge between rounds</td>
+            <td>Stores only the shared global model</td>
+            <td>Stores the shared model, a threat reference set, and historical expertise scores</td>
           </tr>
           <tr>
-            <td>Probe / held-out data</td>
+            <td>Threat reference data on server</td>
             <td>None required</td>
-            <td>Small labelled set on server (&le;2k samples, alarm-triggered)</td>
+            <td>Small labelled set (&le;2,000 samples) assembled from security alerts — no raw traffic</td>
           </tr>
           <tr>
-            <td>Divergence measurement</td>
-            <td>Not computed</td>
-            <td>Forward pass of each client model on probe set per round</td>
+            <td>How expertise is measured</td>
+            <td>Not measured</td>
+            <td>Each round, every device model is tested against the server's reference examples</td>
           </tr>
           <tr>
-            <td>EMA smoothing</td>
-            <td>N/A</td>
-            <td>&beta;&nbsp;=&nbsp;0.4 — dampens round-to-round score variance</td>
+            <td>Score stability (parameter &beta;&nbsp;=&nbsp;0.4)</td>
+            <td>Not applicable</td>
+            <td>Scores are smoothed across rounds to prevent erratic shifts from a single unusual training cycle. &beta; close to 0 reacts instantly; close to 1 changes very slowly. The default &beta;&nbsp;=&nbsp;0.4 provides gentle stability.</td>
           </tr>
           <tr>
-            <td>Power parameter p</td>
-            <td>N/A</td>
-            <td>p&nbsp;=&nbsp;3 — controls concentration of weight on top scorer</td>
+            <td>Concentration dial (parameter p&nbsp;=&nbsp;3)</td>
+            <td>Not applicable</td>
+            <td>Controls how strongly the top expert dominates. At p&nbsp;=&nbsp;1 weight is spread almost evenly; at p&nbsp;=&nbsp;3 the best-performing device gets a decisive advantage. Higher values mean "trust the expert more aggressively".</td>
           </tr>
           <tr>
-            <td>Training distribution</td>
-            <td>Balanced sampling throughout</td>
-            <td>Balanced pre-discovery; natural sampling post-discovery</td>
+            <td>Training data after a new threat is found</td>
+            <td>Balanced sampling throughout all rounds</td>
+            <td>Balanced before discovery; natural (unbalanced) sampling afterwards so specialist devices can show their edge</td>
           </tr>
           <tr>
-            <td>EMA reset at discovery</td>
-            <td>N/A</td>
-            <td>Yes — pre-discovery scores discarded to avoid contamination</td>
+            <td>Score reset at discovery</td>
+            <td>Not applicable</td>
+            <td>Past scores are discarded when a new threat is found, so the system starts fresh without bias from earlier rounds</td>
           </tr>
           <tr>
-            <td>Server compute overhead</td>
-            <td>Aggregation only</td>
-            <td>Aggregation + n&nbsp;&times;&nbsp;one forward pass on probe set</td>
+            <td>Additional server processing</td>
+            <td>Combining model updates only</td>
+            <td>Combining model updates plus one quick test of each device against the reference set per round</td>
           </tr>
           <tr>
             <td>Privacy guarantee</td>
-            <td>No server data needed</td>
-            <td>Probe is server-local; client gradients / data never shared</td>
+            <td>No server data needed at any point</td>
+            <td>Reference set is server-local and alert-derived; device models are never exposed to other devices</td>
           </tr>
           <tr>
-            <td>Scalability to new classes</td>
-            <td>Passive — requires retraining from new data distribution</td>
-            <td>Active — swap probe set to retarget any newly discovered class</td>
+            <td>Adapting to future new threats</td>
+            <td>Passive — relies on the natural data distribution shifting over time</td>
+            <td>Active — replace the reference set to immediately retarget any newly discovered attack type</td>
           </tr>
         </tbody>
       </table>

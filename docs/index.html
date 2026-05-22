@@ -360,9 +360,24 @@ nav {
 }
 
 /* ── Timeline chart ─────────────────────────────────────────────── */
+.timeline-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 820px) { .timeline-grid { grid-template-columns: 1fr; } }
+.chart-sub-title {
+  color: var(--text2);
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  text-align: center;
+  margin: 0 0 10px;
+}
 .timeline-wrap {
   position: relative;
-  height: 340px;
+  height: 300px;
 }
 
 /* ── Per-class chart ────────────────────────────────────────────── */
@@ -661,13 +676,22 @@ footer {
     <div class="tag">Real experiment results</div>
     <h2 class="section-title">Zero-Day Propagation Timeline</h2>
     <p class="section-sub">
-      <strong style="color:var(--green)">Normal traffic F1</strong> (green dashed, single line &mdash; both strategies identical at 1.00),
-      <strong>Macro F1</strong> (orange/purple dashed, all 20&nbsp;rounds) and <strong>SQL injection F1</strong> post-discovery &mdash; rounds&nbsp;6&ndash;20 only (solid lines).
-      FedDiv stabilises SQL injection F1 from round&nbsp;6 while preserving overall and normal-traffic accuracy.
+      <strong>Left:</strong> Macro F1 across all 20 rounds for both strategies &mdash; discovery event highlighted at round&nbsp;5.
+      <strong>Right:</strong> SQL injection F1 post-discovery only (rounds&nbsp;6&ndash;20), Y-axis from 0 to expose the full gap.
+      FedDiv stabilises SQL injection F1 at&nbsp;<strong>0.60</strong> (recall&nbsp;100%) while FedAvg stagnates at&nbsp;<strong>0.29</strong> (recall&nbsp;17%).
     </p>
-    <div class="card fade-in">
-      <div class="timeline-wrap">
-        <canvas id="timelineChart"></canvas>
+    <div class="timeline-grid">
+      <div class="card fade-in">
+        <p class="chart-sub-title">Macro F1 &mdash; All Rounds</p>
+        <div class="timeline-wrap">
+          <canvas id="timelineMacroChart"></canvas>
+        </div>
+      </div>
+      <div class="card fade-in">
+        <p class="chart-sub-title">SQL Injection F1 &mdash; Post-Discovery (R6&ndash;R20)</p>
+        <div class="timeline-wrap">
+          <canvas id="timelineSqlChart"></canvas>
+        </div>
       </div>
     </div>
   </div>
@@ -920,87 +944,34 @@ setTimeout(() => {
 }, 100);
 
 // ────────────────────────────────────────────────────────────────────
-// Timeline — single chart
-// Normal F1 (green, combined) + Macro F1 (dashed) + SQL F1 post-R5 (solid)
+// Timeline — Chart 1: Macro F1 (all 20 rounds)
 // ────────────────────────────────────────────────────────────────────
-
-// Combined Normal traffic F1 (average of both — essentially 1.00 throughout)
-const NORMAL_F1   = FA_NORMAL.map((v, i) => (v + FD_NORMAL[i]) / 2);
-// SQL injection F1: null before discovery, real value from round 6 onwards
-const FA_TGT_POST = FA_TGT_F1.map((v, i) => ROUNDS[i] > DISC_ROUND ? v : null);
-const FD_TGT_POST = FD_TGT_F1.map((v, i) => ROUNDS[i] > DISC_ROUND ? v : null);
-
-new Chart(document.getElementById('timelineChart').getContext('2d'), {
+new Chart(document.getElementById('timelineMacroChart').getContext('2d'), {
   type: 'line',
   data: {
     labels: ROUNDS,
     datasets: [
       {
-        label: 'Normal traffic F1 (both, F1 = 1.00)',
-        data: NORMAL_F1,
-        borderColor: '#00ff88',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 2,
-        pointBackgroundColor: '#00ff88',
-        tension: .1,
-        borderDash: [4, 3],
-        fill: false,
-        order: 5
-      },
-      {
         label: 'FedAvg — Macro F1',
         data: FA_MACRO,
         borderColor: '#ff6b35',
         backgroundColor: 'transparent',
-        borderWidth: 1.8,
-        pointRadius: 2,
+        borderWidth: 2,
+        pointRadius: 3,
         pointBackgroundColor: '#ff6b35',
         tension: .35,
-        borderDash: [5, 4],
-        fill: false,
-        order: 4
+        fill: false
       },
       {
         label: 'FedDiv — Macro F1',
         data: FD_MACRO,
         borderColor: '#a855f7',
         backgroundColor: 'transparent',
-        borderWidth: 1.8,
-        pointRadius: 2,
+        borderWidth: 2,
+        pointRadius: 3,
         pointBackgroundColor: '#a855f7',
         tension: .35,
-        borderDash: [5, 4],
-        fill: false,
-        order: 3
-      },
-      {
-        label: 'FedAvg — SQL injection F1 (post R5)',
-        data: FA_TGT_POST,
-        borderColor: '#ff6b35',
-        backgroundColor: 'rgba(255,107,53,.10)',
-        borderWidth: 2.5,
-        pointRadius: 4,
-        pointBackgroundColor: 'transparent',
-        pointBorderColor: '#ff6b35',
-        tension: .35,
-        spanGaps: false,
-        fill: false,
-        order: 1
-      },
-      {
-        label: 'FedDiv — SQL injection F1 (post R5)',
-        data: FD_TGT_POST,
-        borderColor: '#a855f7',
-        backgroundColor: 'rgba(168,85,247,.10)',
-        borderWidth: 2.5,
-        pointRadius: 4,
-        pointBackgroundColor: 'transparent',
-        pointBorderColor: '#a855f7',
-        tension: .35,
-        spanGaps: false,
-        fill: false,
-        order: 2
+        fill: false
       }
     ]
   },
@@ -1011,7 +982,6 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
       ...CHART_DEFAULTS.plugins,
       tooltip: {
         ...CHART_DEFAULTS.plugins.tooltip,
-        filter: item => item.parsed.y !== null,
         callbacks: {
           title: ctx => `Round ${ctx[0].label}${+ctx[0].label <= DISC_ROUND ? '  — Pre-discovery' : '  — Post-discovery'}`,
           label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`
@@ -1029,8 +999,8 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
       },
       y: {
         ...CHART_DEFAULTS.scales.y,
-        min: 0.2, max: 1.08,
-        title: { display: true, text: 'F1 Score', color: '#7a9cc4' }
+        min: 0,
+        title: { display: true, text: 'Macro F1', color: '#7a9cc4' }
       }
     }
   },
@@ -1041,33 +1011,92 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
       const xEnd  = x.getPixelForValue(ROUNDS[ROUNDS.length - 1]);
       const yTop = y.top, yBot = y.bottom;
       ctx.save();
-      // Region shading
       ctx.fillStyle = 'rgba(255,56,96,.04)';
       ctx.fillRect(x.left, yTop, xDisc - x.left, yBot - yTop);
       ctx.fillStyle = 'rgba(0,255,136,.04)';
       ctx.fillRect(xDisc, yTop, xEnd - xDisc, yBot - yTop);
-      // Discovery line
       ctx.setLineDash([6, 3]);
       ctx.strokeStyle = 'rgba(255,107,53,.8)';
       ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(xDisc, yTop);
-      ctx.lineTo(xDisc, yBot);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(xDisc, yTop); ctx.lineTo(xDisc, yBot); ctx.stroke();
       ctx.setLineDash([]);
-      // Labels
       ctx.fillStyle = '#ff6b35';
       ctx.font = 'bold 10px Segoe UI, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('Discovery R' + DISC_ROUND, xDisc, yTop + 12);
-      ctx.fillStyle = 'rgba(255,56,96,.45)';
-      ctx.font = '9px Segoe UI, sans-serif';
+      ctx.fillStyle = 'rgba(255,56,96,.45)'; ctx.font = '9px Segoe UI, sans-serif';
       ctx.fillText('PRE', (x.left + xDisc) / 2, yBot - 8);
       ctx.fillStyle = 'rgba(0,255,136,.45)';
-      ctx.fillText('POST — SQL F1 active', (xDisc + xEnd) / 2, yBot - 8);
+      ctx.fillText('POST', (xDisc + xEnd) / 2, yBot - 8);
       ctx.restore();
     }
   }]
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Timeline — Chart 2: SQL injection F1 post-discovery (R6–R20)
+// ────────────────────────────────────────────────────────────────────
+const SQL_ROUNDS  = ROUNDS.slice(DISC_ROUND);         // [6,7,...,20]
+const FA_SQL_POST = FA_TGT_F1.slice(DISC_ROUND);      // 15 values
+const FD_SQL_POST = FD_TGT_F1.slice(DISC_ROUND);      // 15 values
+
+new Chart(document.getElementById('timelineSqlChart').getContext('2d'), {
+  type: 'line',
+  data: {
+    labels: SQL_ROUNDS,
+    datasets: [
+      {
+        label: 'FedAvg — SQL injection F1',
+        data: FA_SQL_POST,
+        borderColor: '#ff6b35',
+        backgroundColor: 'rgba(255,107,53,.12)',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointBackgroundColor: 'transparent',
+        pointBorderColor: '#ff6b35',
+        tension: .35,
+        fill: false
+      },
+      {
+        label: 'FedDiv — SQL injection F1',
+        data: FD_SQL_POST,
+        borderColor: '#a855f7',
+        backgroundColor: 'rgba(168,85,247,.12)',
+        borderWidth: 2.5,
+        pointRadius: 4,
+        pointBackgroundColor: 'transparent',
+        pointBorderColor: '#a855f7',
+        tension: .35,
+        fill: false
+      }
+    ]
+  },
+  options: {
+    ...CHART_DEFAULTS,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      ...CHART_DEFAULTS.plugins,
+      tooltip: {
+        ...CHART_DEFAULTS.plugins.tooltip,
+        callbacks: {
+          title: ctx => `Round ${ctx[0].label}  — Post-discovery`,
+          label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        ...CHART_DEFAULTS.scales.x,
+        title: { display: true, text: 'FL Round (Post-Discovery)', color: '#7a9cc4' }
+      },
+      y: {
+        ...CHART_DEFAULTS.scales.y,
+        min: 0,
+        max: 1,
+        title: { display: true, text: 'SQL injection F1', color: '#7a9cc4' }
+      }
+    }
+  }
 });
 
 // ────────────────────────────────────────────────────────────────────

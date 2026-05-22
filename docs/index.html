@@ -661,9 +661,9 @@ footer {
     <div class="tag">Real experiment results</div>
     <h2 class="section-title">Zero-Day Propagation Timeline</h2>
     <p class="section-sub">
-      Normal traffic F1 (dashed lines, all 20&nbsp;rounds) and SQL injection F1 post-discovery &mdash; rounds&nbsp;6&ndash;20 only (solid lines).
-      Both strategies maintain perfect normal-traffic detection (F1&nbsp;=&nbsp;1.00) throughout.
-      FedDiv stabilises SQL injection F1 from round&nbsp;6; FedAvg oscillates.
+      <strong style="color:var(--green)">Normal traffic F1</strong> (green dashed, single line &mdash; both strategies identical at 1.00),
+      <strong>Macro F1</strong> (orange/purple dashed, all 20&nbsp;rounds) and <strong>SQL injection F1</strong> post-discovery &mdash; rounds&nbsp;6&ndash;20 only (solid lines).
+      FedDiv stabilises SQL injection F1 from round&nbsp;6 while preserving overall and normal-traffic accuracy.
     </p>
     <div class="card fade-in">
       <div class="timeline-wrap">
@@ -921,9 +921,11 @@ setTimeout(() => {
 
 // ────────────────────────────────────────────────────────────────────
 // Timeline — single chart
-// Macro F1 all rounds (dashed) + SQL injection F1 post-discovery (solid)
+// Normal F1 (green, combined) + Macro F1 (dashed) + SQL F1 post-R5 (solid)
 // ────────────────────────────────────────────────────────────────────
 
+// Combined Normal traffic F1 (average of both — essentially 1.00 throughout)
+const NORMAL_F1   = FA_NORMAL.map((v, i) => (v + FD_NORMAL[i]) / 2);
 // SQL injection F1: null before discovery, real value from round 6 onwards
 const FA_TGT_POST = FA_TGT_F1.map((v, i) => ROUNDS[i] > DISC_ROUND ? v : null);
 const FD_TGT_POST = FD_TGT_F1.map((v, i) => ROUNDS[i] > DISC_ROUND ? v : null);
@@ -934,8 +936,21 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
     labels: ROUNDS,
     datasets: [
       {
-        label: 'FedAvg — Normal traffic F1',
-        data: FA_NORMAL,
+        label: 'Normal traffic F1 (both, F1 = 1.00)',
+        data: NORMAL_F1,
+        borderColor: '#00ff88',
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointBackgroundColor: '#00ff88',
+        tension: .1,
+        borderDash: [4, 3],
+        fill: false,
+        order: 5
+      },
+      {
+        label: 'FedAvg — Macro F1',
+        data: FA_MACRO,
         borderColor: '#ff6b35',
         backgroundColor: 'transparent',
         borderWidth: 1.8,
@@ -944,11 +959,11 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
         tension: .35,
         borderDash: [5, 4],
         fill: false,
-        order: 3
+        order: 4
       },
       {
-        label: 'FedDiv — Normal traffic F1',
-        data: FD_NORMAL,
+        label: 'FedDiv — Macro F1',
+        data: FD_MACRO,
         borderColor: '#a855f7',
         backgroundColor: 'transparent',
         borderWidth: 1.8,
@@ -957,7 +972,7 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
         tension: .35,
         borderDash: [5, 4],
         fill: false,
-        order: 4
+        order: 3
       },
       {
         label: 'FedAvg — SQL injection F1 (post R5)',

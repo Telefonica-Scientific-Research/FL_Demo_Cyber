@@ -281,29 +281,34 @@ class DiscoveryClient(fl.client.NumPyClient):
         mu               = float(config.get("proximal_mu",    0.0))
         discovery_active = bool(config.get("discovery_active", False))
 
+        # ── Data: pool client gets extra samples post-discovery ──────────
         if discovery_active and self.X_pool is not None:
             X = np.concatenate([self.X_base, self.X_pool])
             y = np.concatenate([self.y_base, self.y_pool])
-            # Use natural (unbalanced) distribution post-discovery so that the
-            # discovering client's elevated SQL injection frequency (10.2 %)
-            # creates a strong divergence signal picked up by FedDiv.
-            # Only active when the server explicitly requests natural_sampling
-            # (FedDivStrategy sets this; FedAvgStrategy does not).
-            use_natural = bool(config.get("natural_sampling", False))
-            if use_natural:
-                loader = DataLoader(
-                    TensorDataset(
-                        torch.from_numpy(X),
-                        torch.from_numpy(y.astype(np.int64)),
-                    ),
-                    batch_size=self.batch_size,
-                    shuffle=True,
-                    num_workers=0,
-                )
-            else:
-                loader = _make_balanced_loader(X, y, self.batch_size)
         else:
             X, y = self.X_base, self.y_base
+
+        # ── Loader strategy ───────────────────────────────────────────────
+        # Natural sampling post-discovery preserves each client's TRUE class
+        # distribution.  This is critical: the discovering client (C0) has
+        # 10.2 % SQL injection in its combined dataset while non-pool clients
+        # have only 0.54 %.  Applying natural sampling to ALL clients (not
+        # just C0) makes the per-client divergence on the SQL output neuron
+        # ~19× larger for C0, giving FedDiv a clean, strong signal to amplify.
+        # Pre-discovery, or when the flag is absent, use balanced loading so
+        # all 15 classes contribute equally during the warm-up phase.
+        use_natural = discovery_active and bool(config.get("natural_sampling", False))
+        if use_natural:
+            loader = DataLoader(
+                TensorDataset(
+                    torch.from_numpy(X.copy()),
+                    torch.from_numpy(y.astype(np.int64)),
+                ),
+                batch_size=self.batch_size,
+                shuffle=True,
+                num_workers=0,
+            )
+        else:
             loader = _make_balanced_loader(X, y, self.batch_size)
 
         global_params = [p.clone().detach() for p in self.model.parameters()]
@@ -372,27 +377,30 @@ class FedAvgStrategy(FedAvg):
 
 class FedDivStrategy(FedAvg):
     """
-    Target-Neuron Power-Weighted FedAvg with EMA (FedDiv).
+    Probe-Based Power-Weighted FedAvg with EMA (FedDiv).
 
     Aggregation weight for client i:
 
         w_i  ∝  ema_div_i^p
 
-    where ema_div_i is an EMA of the L2 distance of just the target-class
-    output neuron (one row of the final Linear weight + its bias):
+    Post-discovery divergence (probe-based):
+        div_i = mean_j  softmax(f_i(x_j))[target_idx]
 
-        div_i = ||net.12.weight[target_idx] - global[target_idx]||₂
+    where x_j are held-out target-class samples known to the server
+    (from the discovery pool or server eval set).  This directly measures
+    each client's SQL-detection confidence: after discovery C0 trains on
+    10.2 % SQL, C1-C4 on 0.54 % — creating a strong softmax separation
+    that the L2-distance metric misses (because the global model already
+    learned SQL pre-discovery, making per-client L2 distances tiny).
 
-    Using a single class neuron (64+1 = 65 values) instead of the full
-    model (~67 K values) removes noise from unrelated parameter changes.
-    Post-discovery Client 0 makes ~1.7× more SQL injection gradient updates
-    than balanced-sampled peers, yielding a stable ~1.7× divergence ratio
-    that drives ~42 % aggregation weight under p=2 (vs. 20 % uniform).
+    Pre-discovery fallback: L2 distance of target-class output neuron
+    (all clients look identical, so weights stay uniform anyway).
     """
 
     def __init__(self, discovery_client_id, discovery_round,
                  proximal_mu=0.0, div_power=2, ema_beta=0.4,
-                 target_idx=None, **kwargs):
+                 target_idx=None, input_dim=None, num_classes=None,
+                 device=None, **kwargs):
         super().__init__(**kwargs)
         self.discovery_client_id = int(discovery_client_id)
         self.discovery_round     = int(discovery_round)
@@ -400,10 +408,24 @@ class FedDivStrategy(FedAvg):
         self.div_power           = float(div_power)
         self.ema_beta            = float(ema_beta)
         self.target_idx          = int(target_idx) if target_idx is not None else None
+        self._input_dim          = input_dim
+        self._num_classes        = num_classes
+        self._device             = device or torch.device("cpu")
+        self._probe_X            = None   # set via set_sql_probe()
         self._ema_divs           = None
         init_params = kwargs.get("initial_parameters")
         self._global_ndarrays = (parameters_to_ndarrays(init_params)
                                  if init_params is not None else None)
+
+    def set_sql_probe(self, X_sql_np):
+        """Register held-out target-class samples as a probe for divergence scoring.
+
+        After discovery, each client's mean softmax probability on these
+        samples is used as its divergence score — a direct measure of
+        SQL-injection knowledge that is robust to the low SQL frequency in
+        natural (unbalanced) sampling.
+        """
+        self._probe_X = torch.from_numpy(X_sql_np.copy()).float().to(self._device)
 
     def configure_fit(self, server_round, parameters, client_manager):
         base             = super().configure_fit(server_round, parameters, client_manager)
@@ -430,32 +452,58 @@ class FedDivStrategy(FedAvg):
                 self._global_ndarrays = parameters_to_ndarrays(agg[0])
             return agg
 
-        # ── Target-neuron divergence ───────────────────────────────────────
-        # Measure only the output row that encodes the target attack class
-        # (net.12.weight[target_idx] ∈ R^64  and  net.12.bias[target_idx] ∈ R).
-        # This 65-dimensional divergence is 1.7× larger for the discovering
-        # client and is unaffected by noise in unrelated output neurons.
-        g_w  = self._global_ndarrays[-2].astype(np.float64)   # [num_classes, 64]
-        g_b  = self._global_ndarrays[-1].astype(np.float64)   # [num_classes]
-        if self.target_idx is not None:
-            g_row = np.concatenate([g_w[self.target_idx], [g_b[self.target_idx]]])
-        else:
-            g_row = np.concatenate([g_w.ravel(), g_b])
+        # ── Divergence computation ─────────────────────────────────────────
+        discovery_active = server_round > self.discovery_round
 
-        raw_divs = []
-        for _, fit_res in results:
-            local_nds = parameters_to_ndarrays(fit_res.parameters)
-            l_w  = local_nds[-2].astype(np.float64)
-            l_b  = local_nds[-1].astype(np.float64)
+        if (discovery_active
+                and self._probe_X is not None
+                and self.target_idx is not None
+                and self._input_dim is not None):
+            # ── Probe-based (post-discovery) ──────────────────────────────
+            # Each client's mean softmax probability on held-out SQL samples
+            # directly measures its SQL-detection knowledge.
+            # C0 (10.2 % SQL) maintains high SQL prob; C1-C4 (0.54 % SQL,
+            # natural) see their SQL neuron attenuate → strong signal.
+            raw_divs = []
+            for _, fit_res in results:
+                local_nds = parameters_to_ndarrays(fit_res.parameters)
+                net = _params_to_model(local_nds, self._input_dim,
+                                       self._num_classes, self._device)
+                net.eval()
+                with torch.no_grad():
+                    logits   = net(self._probe_X)
+                    sql_prob = torch.softmax(logits, dim=1)[
+                        :, self.target_idx].mean().item()
+                raw_divs.append(max(sql_prob, 1e-8))
+        else:
+            # ── L2-distance fallback (pre-discovery or no probe) ──────────
+            # Measure only the output row that encodes the target attack class
+            # (net.12.weight[target_idx] ∈ R^64  and  net.12.bias[target_idx]).
+            g_w  = self._global_ndarrays[-2].astype(np.float64)   # [num_classes, 64]
+            g_b  = self._global_ndarrays[-1].astype(np.float64)   # [num_classes]
             if self.target_idx is not None:
-                l_row = np.concatenate([l_w[self.target_idx], [l_b[self.target_idx]]])
+                g_row = np.concatenate([g_w[self.target_idx], [g_b[self.target_idx]]])
             else:
-                l_row = np.concatenate([l_w.ravel(), l_b])
-            raw_divs.append(max(float(np.linalg.norm(l_row - g_row)), 1e-8))
+                g_row = np.concatenate([g_w.ravel(), g_b])
+
+            raw_divs = []
+            for _, fit_res in results:
+                local_nds = parameters_to_ndarrays(fit_res.parameters)
+                l_w  = local_nds[-2].astype(np.float64)
+                l_b  = local_nds[-1].astype(np.float64)
+                if self.target_idx is not None:
+                    l_row = np.concatenate([l_w[self.target_idx], [l_b[self.target_idx]]])
+                else:
+                    l_row = np.concatenate([l_w.ravel(), l_b])
+                raw_divs.append(max(float(np.linalg.norm(l_row - g_row)), 1e-8))
 
         # ── EMA smoothing over consecutive rounds ──────────────────────────
-        # Prevents single-round fluctuations from reversing the weighting;
-        # a consistently divergent client accumulates elevated influence.
+        # Reset EMA at the first post-discovery round so that pre-discovery
+        # values (when all clients look identical) do not dampen the strong
+        # divergence signal that emerges when C0 trains on the SQL pool.
+        if server_round == self.discovery_round + 1:
+            self._ema_divs = None
+
         if self._ema_divs is None:
             self._ema_divs = list(raw_divs)   # warm-start
         else:
@@ -623,8 +671,16 @@ def run(args):
         div_power=args.div_power,
         ema_beta=args.ema_beta,
         target_idx=target_idx,
+        input_dim=input_dim,
+        num_classes=num_classes,
+        device=device,
         **common_kwargs,
     )
+    # Set SQL probe: server's held-out SQL injection samples.
+    # The server uses these (discovered as the new attack type) to score
+    # each client's SQL-detection confidence post-discovery.
+    sql_probe_mask = (y_eval == target_idx)
+    feddiv_strategy.set_sql_probe(X_eval[sql_probe_mask])
     feddiv_metrics, feddiv_params = _run_strategy(
         "FedDiv", feddiv_strategy, client_fn,
         args.n_clients, args.rounds,

@@ -700,10 +700,10 @@ footer {
   <div class="container">
     <div class="callout fade-in">
       <div class="callout-num" id="callout-num">0×</div>
-      <div class="callout-text">SQL injection F1 improvement after discovery surge</div>
+      <div class="callout-text">SQL injection F1 improvement after zero-day discovery</div>
       <div class="callout-sub">
-        FedDiv&nbsp;(TN,&nbsp;p=3) sustains SQL injection F1 at&nbsp;0.59 through round&nbsp;20, while vanilla FedAvg gradually declines to&nbsp;0.55&nbsp;(1.06× gap at convergence).
-        Normal-traffic F1 remains 1.00 for both — FedDiv adds smarter aggregation with zero privacy cost.
+        FedDiv&nbsp;(probe-based,&nbsp;p=3) achieves SQL injection F1 of&nbsp;<strong>0.60</strong> with&nbsp;<strong>100% recall</strong> from round&nbsp;6 onwards, while vanilla FedAvg stagnates at&nbsp;0.29&nbsp;(17% recall).
+        FedDiv identifies the discovering client&rsquo;s expertise via softmax probing and amplifies it &mdash; a&nbsp;<strong>2.07&times; gap at convergence</strong> with zero impact on normal-traffic detection&nbsp;(F1&nbsp;=&nbsp;1.00).
       </div>
     </div>
   </div>
@@ -735,23 +735,23 @@ const ROUNDS    = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20];
 const DISC_ROUND = 5;
 
 // FedAvg per-round metrics
-const FA_TGT_F1  = [0.5856,0.5752,0.3643,0.269,0.269,0.5944,0.5944,0.5944,0.5944,0.5895,0.5856,0.5856,0.5856,0.5856,0.5856,0.5856,0.5786,0.5841,0.5778,0.5521];
-const FA_MACRO   = [0.6402,0.6486,0.6514,0.6473,0.6615,0.6839,0.6905,0.6876,0.6602,0.6543,0.6355,0.6342,0.6545,0.6443,0.6581,0.6592,0.6603,0.6602,0.6613,0.6609];
-const FA_ACC     = [0.9243,0.9224,0.9219,0.9228,0.9243,0.9266,0.9273,0.9274,0.925,0.929,0.9262,0.9259,0.9286,0.9268,0.9292,0.9291,0.929,0.9293,0.929,0.9284];
+const FA_TGT_F1  = [0.2698,0.3587,0.269,0.3248,0.5891,0.2272,0.0725,0.1431,0.2194,0.2626,0.2073,0.2867,0.2907,0.2909,0.2856,0.2909,0.2857,0.2909,0.2909,0.2909];
+const FA_MACRO   = [0.6076,0.6467,0.6452,0.6498,0.6513,0.5788,0.5984,0.5942,0.6103,0.6015,0.5977,0.6174,0.6605,0.6686,0.6644,0.6653,0.6642,0.6785,0.6887,0.6978];
+const FA_ACC     = [0.9245,0.9227,0.9221,0.9224,0.9236,0.9323,0.9333,0.9349,0.9366,0.9371,0.9365,0.9379,0.9432,0.9437,0.943,0.9439,0.9432,0.9442,0.9448,0.9454];
 
-// FedDiv Target-Neuron (TN, p=3) per-round metrics
-const FD_TGT_F1  = [0.5779,0.269,0.3736,0.2709,0.3531,0.5838,0.5944,0.5888,0.5878,0.5856,0.5856,0.5856,0.5852,0.5803,0.5793,0.5855,0.5845,0.5852,0.5856,0.5868];
-const FD_MACRO   = [0.612,0.6405,0.6478,0.6468,0.6524,0.6333,0.6736,0.6743,0.6459,0.6372,0.6369,0.6342,0.6345,0.6498,0.6548,0.6603,0.6575,0.6504,0.6765,0.6789];
-const FD_ACC     = [0.9216,0.9212,0.9217,0.9227,0.9229,0.9283,0.9258,0.9319,0.9278,0.9266,0.9263,0.926,0.9259,0.9287,0.9294,0.9288,0.9295,0.9298,0.9315,0.9325];
+// FedDiv Probe-Based (p=3, β=0.4) per-round metrics
+const FD_TGT_F1  = [0.2689,0.269,0.269,0.4583,0.5891,0.5721,0.5838,0.5842,0.5843,0.5954,0.5983,0.6023,0.5983,0.6054,0.5984,0.6023,0.6023,0.6023,0.6023,0.6023];
+const FD_MACRO   = [0.6229,0.6425,0.6436,0.654,0.651,0.5753,0.5824,0.5834,0.5822,0.6058,0.6085,0.6607,0.6635,0.6782,0.6749,0.6704,0.6808,0.7029,0.7136,0.7153];
+const FD_ACC     = [0.9259,0.9221,0.922,0.9222,0.9238,0.9319,0.9338,0.934,0.9336,0.9361,0.9365,0.9417,0.9421,0.9437,0.9427,0.9425,0.9436,0.9454,0.9457,0.9459];
 
 // Normal traffic F1 per round (server-side held-out evaluation)
-const FA_NORMAL  = [0.9999,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0];
-const FD_NORMAL  = [0.9997,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0];
+const FA_NORMAL  = [0.9997,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0];
+const FD_NORMAL  = [0.9998,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0];
 
 // Final per-class F1 (round 20)
 const CLASS_NAMES = ['Backdoor','DDoS HTTP','DDoS ICMP','DDoS TCP','DDoS UDP','Fingerprinting','MITM','Normal','Password','Port Scanning','Ransomware','SQL injection','Uploading','Vuln. scanner','XSS'];
-const FA_PC_F1   = [0.7452,0.7338,0.9936,0.8137,0.9999,0.5714,1.0,1.0,0.3859,0.0,0.6542,0.5521,0.2897,0.8003,0.3738];
-const FD_PC_F1   = [0.8558,0.7589,0.9953,0.8137,0.9999,0.6286,1.0,1.0,0.2747,0.0,0.7579,0.5868,0.3896,0.7985,0.3235];
+const FA_PC_F1   = [0.8635,0.8267,0.9939,0.9036,0.9996,0.0,1.0,1.0,0.6034,0.674,0.5966,0.2909,0.5655,0.9017,0.2473];
+const FD_PC_F1   = [0.9256,0.8295,0.9939,0.9025,0.9996,0.0,1.0,1.0,0.3069,0.6755,0.8442,0.6023,0.4247,0.9017,0.3227];
 // SQL injection index = 11
 
 // Per-client attack category distribution (approximate, IID split of 501970 training samples)
@@ -809,11 +809,11 @@ function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
 
 window.addEventListener('load', () => {
   setTimeout(() => {
-    animateCounter(document.getElementById('kpi1'), 93.3, 1200, '%', 1);
+    animateCounter(document.getElementById('kpi1'), 94.6, 1200, '%', 1);
     animateCounter(document.getElementById('kpi2'), 13, 900, '/14');
     animateCounter(document.getElementById('kpi3'), 1, 800, ' round');
     animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
-    animateCounter(document.getElementById('callout-num'), 1.06, 1400, '×', 2);
+    animateCounter(document.getElementById('callout-num'), 2.07, 1400, '×', 2);
   }, 300);
 });
 

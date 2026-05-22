@@ -357,6 +357,10 @@ class FedAvgStrategy(FedAvg):
             (cp, FitIns(fi.parameters, {
                 "proximal_mu":      self.proximal_mu,
                 "discovery_active": discovery_active,
+                # Vanilla FedAvg: use natural (unweighted) distribution
+                # post-discovery so clients train on what they actually have.
+                # This removes the per-class resampling that caused variance.
+                "natural_sampling": discovery_active,
             }))
             for cp, fi in base
         ]
@@ -836,9 +840,9 @@ def _parse_args():
     p.add_argument("--lr",               type=float, default=5e-4)
     p.add_argument("--mu",               type=float, default=0.0,
                    help="FedProx mu (0.0 = disabled, full client divergence).")
-    p.add_argument("--div-power",        type=float, default=2.0,
+    p.add_argument("--div-power",        type=float, default=3.0,
                    help="Exponent for FedDiv divergence weighting (1=linear, "
-                        "2=quadratic default, higher = winner-takes-most).")
+                        "3=cubic default, higher = winner-takes-most).")
     p.add_argument("--ema-beta",          type=float, default=0.4,
                    help="EMA smoothing factor for FedDiv divergence scores "
                         "(0=no smoothing, closer to 1=heavy smoothing).")

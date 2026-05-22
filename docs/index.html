@@ -362,12 +362,7 @@ nav {
 /* ── Timeline chart ─────────────────────────────────────────────── */
 .timeline-wrap {
   position: relative;
-  height: 240px;
-}
-.timeline-sub-wrap {
-  position: relative;
-  height: 200px;
-  margin-top: 16px;
+  height: 340px;
 }
 
 /* ── Per-class chart ────────────────────────────────────────────── */
@@ -621,17 +616,12 @@ footer {
     <div class="tag">Real experiment results</div>
     <h2 class="section-title">Zero-Day Propagation Timeline</h2>
     <p class="section-sub">
-      SQL injection F1 (top) and Macro F1 + Accuracy (bottom) evaluated on the server held-out set
-      after every FL communication round. Vertical dashed line marks the SQL injection discovery surge at round&nbsp;5.
+      Macro F1 across all 20 rounds (dashed lines) and SQL injection F1 post-discovery — rounds&nbsp;6&ndash;20 only (solid lines).
+      Vertical line marks the surge at round&nbsp;5. FedDiv stabilises SQL detection; FedAvg oscillates.
     </p>
     <div class="card fade-in">
-      <p style="margin:0 0 6px; font-size:0.72rem; color:var(--cyan); letter-spacing:.06em; text-transform:uppercase;">SQL injection F1 — FedAvg vs FedDiv</p>
       <div class="timeline-wrap">
         <canvas id="timelineChart"></canvas>
-      </div>
-      <p style="margin:16px 0 6px; font-size:0.72rem; color:var(--cyan); letter-spacing:.06em; text-transform:uppercase;">Macro F1 &amp; Accuracy — FedAvg vs FedDiv</p>
-      <div class="timeline-sub-wrap">
-        <canvas id="macroChart"></canvas>
       </div>
     </div>
   </div>
@@ -770,7 +760,7 @@ function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
 window.addEventListener('load', () => {
   setTimeout(() => {
     animateCounter(document.getElementById('kpi1'), 93.19, 1200, '%', 1);
-    animateCounter(document.getElementById('kpi2'), 14, 900, '/15');
+    animateCounter(document.getElementById('kpi2'), 14, 900, '/14');
     animateCounter(document.getElementById('kpi3'), 1, 800, ' round');
     animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
     animateCounter(document.getElementById('callout-num'), 1.98, 1400, '×', 2);
@@ -880,79 +870,70 @@ setTimeout(() => {
 }, 100);
 
 // ────────────────────────────────────────────────────────────────────
-// Shared discovery-line annotation plugin (reused by both charts)
+// Timeline — single chart
+// Macro F1 all rounds (dashed) + SQL injection F1 post-discovery (solid)
 // ────────────────────────────────────────────────────────────────────
-function makeDiscPlugin(showLabel) {
-  return {
-    afterDraw(chart) {
-      const { ctx, scales: { x, y } } = chart;
-      const xDisc = x.getPixelForValue(DISC_ROUND);
-      const xEnd  = x.getPixelForValue(ROUNDS[ROUNDS.length - 1]);
-      const yTop  = y.top;
-      const yBot  = y.bottom;
 
-      ctx.save();
-      // Shade regions
-      ctx.fillStyle = 'rgba(255,56,96,.04)';
-      ctx.fillRect(x.left, yTop, xDisc - x.left, yBot - yTop);
-      ctx.fillStyle = 'rgba(0,255,136,.04)';
-      ctx.fillRect(xDisc, yTop, xEnd - xDisc, yBot - yTop);
-      // Vertical dashed line
-      ctx.setLineDash([6, 3]);
-      ctx.strokeStyle = 'rgba(255,107,53,.75)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(xDisc, yTop);
-      ctx.lineTo(xDisc, yBot);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      if (showLabel) {
-        ctx.fillStyle = '#ff6b35';
-        ctx.font = 'bold 10px Segoe UI, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Discovery R' + DISC_ROUND, xDisc, yTop + 12);
-        ctx.fillStyle = 'rgba(255,56,96,.45)';
-        ctx.font = '9px Segoe UI, sans-serif';
-        ctx.fillText('PRE', (x.left + xDisc) / 2, yBot - 8);
-        ctx.fillStyle = 'rgba(0,255,136,.45)';
-        ctx.fillText('POST', (xDisc + xEnd) / 2, yBot - 8);
-      }
-      ctx.restore();
-    }
-  };
-}
+// SQL injection F1: null before discovery, real value from round 6 onwards
+const FA_TGT_POST = FA_TGT_F1.map((v, i) => ROUNDS[i] > DISC_ROUND ? v : null);
+const FD_TGT_POST = FD_TGT_F1.map((v, i) => ROUNDS[i] > DISC_ROUND ? v : null);
 
-// ────────────────────────────────────────────────────────────────────
-// Chart 1 — SQL injection F1 (zero-day propagation)
-// ────────────────────────────────────────────────────────────────────
 new Chart(document.getElementById('timelineChart').getContext('2d'), {
   type: 'line',
   data: {
     labels: ROUNDS,
     datasets: [
       {
-        label: 'FedAvg — SQL injection F1',
-        data: FA_TGT_F1,
+        label: 'FedAvg — Macro F1 (all rounds)',
+        data: FA_MACRO,
         borderColor: '#ff6b35',
-        backgroundColor: 'rgba(255,107,53,.12)',
+        backgroundColor: 'transparent',
+        borderWidth: 1.8,
+        pointRadius: 2,
+        pointBackgroundColor: '#ff6b35',
+        tension: .35,
+        borderDash: [5, 4],
+        fill: false,
+        order: 3
+      },
+      {
+        label: 'FedDiv — Macro F1 (all rounds)',
+        data: FD_MACRO,
+        borderColor: '#a855f7',
+        backgroundColor: 'transparent',
+        borderWidth: 1.8,
+        pointRadius: 2,
+        pointBackgroundColor: '#a855f7',
+        tension: .35,
+        borderDash: [5, 4],
+        fill: false,
+        order: 4
+      },
+      {
+        label: 'FedAvg — SQL injection F1 (post R5)',
+        data: FA_TGT_POST,
+        borderColor: '#ff6b35',
+        backgroundColor: 'rgba(255,107,53,.10)',
         borderWidth: 2.5,
         pointRadius: 4,
         pointBackgroundColor: 'transparent',
         pointBorderColor: '#ff6b35',
         tension: .35,
+        spanGaps: false,
         fill: false,
         order: 1
       },
       {
-        label: 'FedDiv (TN, p=2) — SQL injection F1',
-        data: FD_TGT_F1,
+        label: 'FedDiv — SQL injection F1 (post R5)',
+        data: FD_TGT_POST,
         borderColor: '#a855f7',
-        backgroundColor: 'rgba(168,85,247,.12)',
+        backgroundColor: 'rgba(168,85,247,.10)',
         borderWidth: 2.5,
         pointRadius: 4,
         pointBackgroundColor: 'transparent',
         pointBorderColor: '#a855f7',
         tension: .35,
+        spanGaps: false,
         fill: false,
         order: 2
       }
@@ -965,90 +946,9 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
       ...CHART_DEFAULTS.plugins,
       tooltip: {
         ...CHART_DEFAULTS.plugins.tooltip,
+        filter: item => item.parsed.y !== null,
         callbacks: {
-          title: ctx => `Round ${ctx[0].label}${+ctx[0].label <= DISC_ROUND ? '  (Pre-discovery)' : '  (Post-discovery)'}`,
-          label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`
-        }
-      }
-    },
-    scales: {
-      x: {
-        ...CHART_DEFAULTS.scales.x,
-        ticks: {
-          color: ctx => +ctx.tick.label === DISC_ROUND ? '#ff6b35' : '#7a9cc4',
-          font: ctx => +ctx.tick.label === DISC_ROUND ? { weight: 'bold', size: 11 } : { size: 10 }
-        }
-      },
-      y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 1.0,
-           title: { display: true, text: 'SQL injection F1', color: '#7a9cc4' } }
-    }
-  },
-  plugins: [makeDiscPlugin(true)]
-});
-
-// ────────────────────────────────────────────────────────────────────
-// Chart 2 — Macro F1 & Accuracy
-// ────────────────────────────────────────────────────────────────────
-new Chart(document.getElementById('macroChart').getContext('2d'), {
-  type: 'line',
-  data: {
-    labels: ROUNDS,
-    datasets: [
-      {
-        label: 'FedAvg — Macro F1',
-        data: FA_MACRO,
-        borderColor: '#ff6b35',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: .35,
-        fill: false,
-        order: 1
-      },
-      {
-        label: 'FedDiv (TN, p=2) — Macro F1',
-        data: FD_MACRO,
-        borderColor: '#a855f7',
-        backgroundColor: 'transparent',
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: .35,
-        fill: false,
-        order: 2
-      },
-      {
-        label: 'FedAvg — Accuracy',
-        data: FA_ACC,
-        borderColor: '#ff6b35',
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        pointRadius: 2,
-        tension: .35,
-        borderDash: [4, 3],
-        order: 3
-      },
-      {
-        label: 'FedDiv (TN, p=2) — Accuracy',
-        data: FD_ACC,
-        borderColor: '#a855f7',
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        pointRadius: 2,
-        tension: .35,
-        borderDash: [4, 3],
-        order: 4
-      }
-    ]
-  },
-  options: {
-    ...CHART_DEFAULTS,
-    interaction: { intersect: false, mode: 'index' },
-    plugins: {
-      ...CHART_DEFAULTS.plugins,
-      tooltip: {
-        ...CHART_DEFAULTS.plugins.tooltip,
-        callbacks: {
-          title: ctx => `Round ${ctx[0].label}${+ctx[0].label <= DISC_ROUND ? '  (Pre-discovery)' : '  (Post-discovery)'}`,
+          title: ctx => `Round ${ctx[0].label}${+ctx[0].label <= DISC_ROUND ? '  — Pre-discovery' : '  — Post-discovery'}`,
           label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`
         }
       }
@@ -1059,14 +959,50 @@ new Chart(document.getElementById('macroChart').getContext('2d'), {
         title: { display: true, text: 'FL Communication Round', color: '#7a9cc4' },
         ticks: {
           color: ctx => +ctx.tick.label === DISC_ROUND ? '#ff6b35' : '#7a9cc4',
-          font: ctx => +ctx.tick.label === DISC_ROUND ? { weight: 'bold', size: 11 } : { size: 10 }
+          font:  ctx => +ctx.tick.label === DISC_ROUND ? { weight: 'bold', size: 11 } : { size: 10 }
         }
       },
-      y: { ...CHART_DEFAULTS.scales.y, min: 0.6, max: 1.0,
-           title: { display: true, text: 'Score', color: '#7a9cc4' } }
+      y: {
+        ...CHART_DEFAULTS.scales.y,
+        min: 0.3, max: 0.85,
+        title: { display: true, text: 'F1 Score', color: '#7a9cc4' }
+      }
     }
   },
-  plugins: [makeDiscPlugin(false)]
+  plugins: [{
+    afterDraw(chart) {
+      const { ctx, scales: { x, y } } = chart;
+      const xDisc = x.getPixelForValue(DISC_ROUND);
+      const xEnd  = x.getPixelForValue(ROUNDS[ROUNDS.length - 1]);
+      const yTop = y.top, yBot = y.bottom;
+      ctx.save();
+      // Region shading
+      ctx.fillStyle = 'rgba(255,56,96,.04)';
+      ctx.fillRect(x.left, yTop, xDisc - x.left, yBot - yTop);
+      ctx.fillStyle = 'rgba(0,255,136,.04)';
+      ctx.fillRect(xDisc, yTop, xEnd - xDisc, yBot - yTop);
+      // Discovery line
+      ctx.setLineDash([6, 3]);
+      ctx.strokeStyle = 'rgba(255,107,53,.8)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(xDisc, yTop);
+      ctx.lineTo(xDisc, yBot);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Labels
+      ctx.fillStyle = '#ff6b35';
+      ctx.font = 'bold 10px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Discovery R' + DISC_ROUND, xDisc, yTop + 12);
+      ctx.fillStyle = 'rgba(255,56,96,.45)';
+      ctx.font = '9px Segoe UI, sans-serif';
+      ctx.fillText('PRE', (x.left + xDisc) / 2, yBot - 8);
+      ctx.fillStyle = 'rgba(0,255,136,.45)';
+      ctx.fillText('POST — SQL F1 active', (xDisc + xEnd) / 2, yBot - 8);
+      ctx.restore();
+    }
+  }]
 });
 
 // ────────────────────────────────────────────────────────────────────

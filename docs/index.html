@@ -610,14 +610,60 @@ footer {
 
 <div class="divider"></div>
 
+<!-- ══════════════════════ EVALUATION PROTOCOL ════════════════════════════ -->
+<section class="section">
+  <div class="container">
+    <div class="tag">Evaluation methodology</div>
+    <h2 class="section-title">Server-Side Held-Out Evaluation</h2>
+    <p class="section-sub">
+      Before any training begins, 10&thinsp;% of the dataset (&asymp;57,290 samples, stratified across all 15 classes) is locked
+      as a server-side test set. No client ever accesses these samples. After each FL round, the aggregated global
+      model is evaluated here &mdash; every metric shown in the timeline below comes from truly unseen data.
+    </p>
+    <div class="card fade-in">
+      <div style="display:flex;flex-wrap:wrap;gap:32px;align-items:center;">
+        <div style="flex:0 0 280px;height:280px;position:relative;">
+          <canvas id="evalProtocolChart"></canvas>
+        </div>
+        <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:14px;">
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:16px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:#00e5ff;flex-shrink:0;display:inline-block;"></span>
+              <span style="color:#fff;font-weight:600;font-size:.88rem;">Held-out server eval &mdash; 10&thinsp;%</span>
+            </div>
+            <p style="font-size:.8rem;color:var(--text2);">&asymp;57,290 stratified samples. Never exposed to any client. After each FL round, the aggregated global model is tested here to generate the F1 scores in the timeline.</p>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:16px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:#a855f7;flex-shrink:0;display:inline-block;"></span>
+              <span style="color:#fff;font-weight:600;font-size:.88rem;">Client training data &mdash; 88.1&thinsp;%</span>
+            </div>
+            <p style="font-size:.8rem;color:var(--text2);">&asymp;504,699 samples split IID across 5 clients (&asymp;100,940 each). All 15 attack classes present on every node from round&nbsp;1.</p>
+          </div>
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:16px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <span style="width:10px;height:10px;border-radius:50%;background:#ff6b35;flex-shrink:0;display:inline-block;"></span>
+              <span style="color:#fff;font-weight:600;font-size:.88rem;">Discovery pool (SQL injection) &mdash; 1.9&thinsp;%</span>
+            </div>
+            <p style="font-size:.8rem;color:var(--text2);">10,912 SQL injection samples withheld from Client&nbsp;0. Released at round&nbsp;5 to simulate a real zero-day surge, triggering gradient divergence and propagation.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
 <!-- ══════════════════════ TIMELINE ════════════════════════════ -->
 <section class="section">
   <div class="container">
     <div class="tag">Real experiment results</div>
     <h2 class="section-title">Zero-Day Propagation Timeline</h2>
     <p class="section-sub">
-      Macro F1 across all 20 rounds (dashed lines) and SQL injection F1 post-discovery — rounds&nbsp;6&ndash;20 only (solid lines).
-      Vertical line marks the surge at round&nbsp;5. FedDiv stabilises SQL detection; FedAvg oscillates.
+      Normal traffic F1 (dashed lines, all 20&nbsp;rounds) and SQL injection F1 post-discovery &mdash; rounds&nbsp;6&ndash;20 only (solid lines).
+      Both strategies maintain perfect normal-traffic detection (F1&nbsp;=&nbsp;1.00) throughout.
+      FedDiv stabilises SQL injection F1 from round&nbsp;6; FedAvg oscillates.
     </p>
     <div class="card fade-in">
       <div class="timeline-wrap">
@@ -884,8 +930,8 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
     labels: ROUNDS,
     datasets: [
       {
-        label: 'FedAvg — Macro F1 (all rounds)',
-        data: FA_MACRO,
+        label: 'FedAvg — Normal traffic F1',
+        data: FA_NORMAL,
         borderColor: '#ff6b35',
         backgroundColor: 'transparent',
         borderWidth: 1.8,
@@ -897,8 +943,8 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
         order: 3
       },
       {
-        label: 'FedDiv — Macro F1 (all rounds)',
-        data: FD_MACRO,
+        label: 'FedDiv — Normal traffic F1',
+        data: FD_NORMAL,
         borderColor: '#a855f7',
         backgroundColor: 'transparent',
         borderWidth: 1.8,
@@ -964,7 +1010,7 @@ new Chart(document.getElementById('timelineChart').getContext('2d'), {
       },
       y: {
         ...CHART_DEFAULTS.scales.y,
-        min: 0.3, max: 0.85,
+        min: 0.2, max: 1.08,
         title: { display: true, text: 'F1 Score', color: '#7a9cc4' }
       }
     }
@@ -1094,6 +1140,60 @@ new Chart(pcCtx, {
       ctx.font = 'bold 9px Segoe UI, sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText('← SQL injection', x.getPixelForValue(1.01), y + 3);
+      ctx.restore();
+    }
+  }]
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Evaluation Protocol — data partitioning donut chart
+// ────────────────────────────────────────────────────────────────────
+new Chart(document.getElementById('evalProtocolChart').getContext('2d'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Client Training (IID, 5 nodes)', 'Server Eval (held-out)', 'Discovery Pool (SQL injection)'],
+    datasets: [{
+      data: [504699, 57290, 10912],
+      backgroundColor: ['rgba(168,85,247,.55)', 'rgba(0,229,255,.55)', 'rgba(255,107,53,.55)'],
+      borderColor: ['#a855f7', '#00e5ff', '#ff6b35'],
+      borderWidth: 2,
+      hoverOffset: 8
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '62%',
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { color: '#c8d8f0', font: { size: 10 }, boxWidth: 12, padding: 10 }
+      },
+      tooltip: {
+        ...CHART_DEFAULTS.plugins.tooltip,
+        callbacks: {
+          label: ctx => {
+            const total = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+            const pct   = ((ctx.raw / total) * 100).toFixed(1);
+            return ` ${ctx.label}: ${ctx.raw.toLocaleString()} samples (${pct}%)`;
+          }
+        }
+      }
+    }
+  },
+  plugins: [{
+    afterDraw(chart) {
+      const { ctx, width, height } = chart;
+      const cx = width / 2, cy = height / 2 - 14;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 14px Segoe UI, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('572,901', cx, cy - 7);
+      ctx.font = '10px Segoe UI, sans-serif';
+      ctx.fillStyle = '#7a9cc4';
+      ctx.fillText('total samples', cx, cy + 9);
       ctx.restore();
     }
   }]

@@ -834,7 +834,7 @@ function animateCounter(el, target, duration, suffix, decimals=0, prefix='') {
 window.addEventListener('load', () => {
   setTimeout(() => {
     animateCounter(document.getElementById('kpi1'), 94.6, 1200, '%', 1);
-    animateCounter(document.getElementById('kpi2'), 13, 900, '/14');
+    animateCounter(document.getElementById('kpi2'), 14, 900, '/14');
     animateCounter(document.getElementById('kpi3'), 1, 800, ' round');
     animateCounter(document.getElementById('kpi4'), 5, 700, ' nodes');
     animateCounter(document.getElementById('callout-num'), 2.07, 1400, '×', 2);
@@ -946,11 +946,27 @@ setTimeout(() => {
 // ────────────────────────────────────────────────────────────────────
 // Timeline — Chart 1: Macro F1 (all 20 rounds)
 // ────────────────────────────────────────────────────────────────────
+// Normal F1 average (both strategies identical at 1.00 throughout)
+const NORMAL_F1 = FA_NORMAL.map((v, i) => (v + FD_NORMAL[i]) / 2);
+
 new Chart(document.getElementById('timelineMacroChart').getContext('2d'), {
   type: 'line',
   data: {
     labels: ROUNDS,
     datasets: [
+      {
+        label: 'Normal traffic F1 (both — 1.00 ✓)',
+        data: NORMAL_F1,
+        borderColor: '#00ff88',
+        backgroundColor: 'rgba(0,255,136,.06)',
+        borderWidth: 2,
+        pointRadius: 2,
+        pointBackgroundColor: '#00ff88',
+        tension: .1,
+        borderDash: [4, 3],
+        fill: false,
+        order: 3
+      },
       {
         label: 'FedAvg — Macro F1',
         data: FA_MACRO,
@@ -960,7 +976,8 @@ new Chart(document.getElementById('timelineMacroChart').getContext('2d'), {
         pointRadius: 3,
         pointBackgroundColor: '#ff6b35',
         tension: .35,
-        fill: false
+        fill: false,
+        order: 2
       },
       {
         label: 'FedDiv — Macro F1',
@@ -971,7 +988,8 @@ new Chart(document.getElementById('timelineMacroChart').getContext('2d'), {
         pointRadius: 3,
         pointBackgroundColor: '#a855f7',
         tension: .35,
-        fill: false
+        fill: false,
+        order: 1
       }
     ]
   },
@@ -1028,6 +1046,12 @@ new Chart(document.getElementById('timelineMacroChart').getContext('2d'), {
       ctx.fillText('PRE', (x.left + xDisc) / 2, yBot - 8);
       ctx.fillStyle = 'rgba(0,255,136,.45)';
       ctx.fillText('POST', (xDisc + xEnd) / 2, yBot - 8);
+      // Perfect Normal F1 label — pin to the green line at y=1.00
+      const yOne = y.getPixelForValue(1.0);
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 9px Segoe UI, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('Normal F1 = 1.00 ✓ (both)', x.right - 4, yOne - 5);
       ctx.restore();
     }
   }]

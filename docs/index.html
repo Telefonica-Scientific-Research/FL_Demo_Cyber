@@ -823,36 +823,40 @@ footer {
 <!-- ══════════════════════ METHOD COMPARISON ════════════════════════ -->
 <section class="section">
   <div class="container">
-    <div class="tag">Algorithm comparison</div>
-    <h2 class="section-title">FedAvg vs FedDiv — How They Differ</h2>
+    <div class="tag">Design rationale</div>
+    <h2 class="section-title">FedAvg vs FedDiv — Design Choices</h2>
     <p class="section-sub">
-      Both strategies share the same DNN architecture, dataset, and communication protocol.
-      The fundamental difference is how client updates are <em>weighted</em> during aggregation,
-      and whether the server can <em>identify and amplify</em> the most knowledgeable client after a zero-day discovery event.
+      Both algorithms solve the same federated learning problem: train a shared intrusion-detection model across
+      heterogeneous edge nodes without centralising raw traffic data. Their design philosophies diverge at a single
+      critical question — <em>should the server treat all client updates as equally trustworthy?</em>
     </p>
 
     <div class="compare-grid">
       <div class="card compare-card fade-in">
-        <div class="compare-header compare-header--fa">FedAvg &mdash; Vanilla Federated Averaging</div>
+        <div class="compare-header compare-header--fa">FedAvg &mdash; Uniform Aggregation</div>
         <div class="compare-body">
-          <p>Each client's model update is weighted solely by its local dataset size. No distinction is made between clients that have encountered the new attack and those that have not — the expert is diluted.</p>
+          <p><strong>Core assumption:</strong> all clients observe the same data distribution. Aggregation weights are fixed proportionally to local dataset size — the server plays a purely passive role.</p>
           <ul class="compare-list">
-            <li>Uniform, size-proportional aggregation weights</li>
-            <li>No zero-day awareness after the discovery event</li>
-            <li>SQL-expert client (10.2%) diluted by 4 uninformed peers (~0.5% SQL each)</li>
-            <li>Global model inherits the majority view — SQL recall stagnates at <strong>17%</strong></li>
+            <li><strong>Aggregation:</strong> weighted mean of parameter tensors, weights&nbsp;∝&nbsp;|D<sub>i</sub>|</li>
+            <li><strong>Server role:</strong> stateless — stores no knowledge between rounds</li>
+            <li><strong>Client sampling:</strong> balanced mini-batches maintained throughout</li>
+            <li><strong>Heterogeneity:</strong> not modelled — clients are treated as i.i.d. workers</li>
+            <li><strong>New-class handling:</strong> relies on the averaging process to propagate new knowledge; minority signal is divided by the number of clients</li>
+            <li><strong>Privacy model:</strong> no server-side data required at any point</li>
           </ul>
         </div>
       </div>
       <div class="card compare-card fade-in">
-        <div class="compare-header compare-header--fd">FedDiv &mdash; Probe-Based Power-Weighted Aggregation</div>
+        <div class="compare-header compare-header--fd">FedDiv &mdash; Probe-Weighted Aggregation</div>
         <div class="compare-body">
-          <p>After discovery, the server scores each client by measuring its mean softmax confidence on a held-out set of 1,516 SQL injection samples. Scores are raised to <em>p</em>&nbsp;=&nbsp;3 and EMA-smoothed (β&nbsp;=&nbsp;0.4) before normalisation.</p>
+          <p><strong>Core assumption:</strong> after a zero-day event, clients diverge in expertise. The server holds a small, labelled probe set and uses it to <em>measure</em> each client's competence on the target class before aggregating.</p>
           <ul class="compare-list">
-            <li>Divergence score: mean P(SQL&nbsp;|&nbsp;probe samples) per client model</li>
-            <li>C0 scores 0.72 vs ~0.15 for peers &rarr; 2.73&times; ratio at R6</li>
-            <li>Expert client amplified to &gt;99% of aggregation weight post-discovery</li>
-            <li>SQL recall jumps to <strong>100%</strong> from round&nbsp;6, F1 stable at 0.60</li>
+            <li><strong>Aggregation:</strong> w<sub>i</sub>&nbsp;∝&nbsp;div<sub>i</sub><sup>p</sup>, where div<sub>i</sub>&nbsp;=&nbsp;mean&nbsp;softmax<sub>SQL</sub>(f<sub>i</sub>(x<sub>probe</sub>))</li>
+            <li><strong>Server role:</strong> active — maintains a probe set and EMA divergence history</li>
+            <li><strong>Client sampling:</strong> switches to natural (unbalanced) sampling post-discovery to expose true data distribution</li>
+            <li><strong>Heterogeneity:</strong> explicitly exploited — a specialist client receives proportionally higher weight</li>
+            <li><strong>New-class handling:</strong> probe score surfaces the specialist; power&nbsp;p controls how sharply weight concentrates</li>
+            <li><strong>Privacy model:</strong> server holds &le;2k labelled samples (alarm-triggered, not raw telemetry); client data never leaves the node</li>
           </ul>
         </div>
       </div>
@@ -862,66 +866,71 @@ footer {
       <table class="cmp-table">
         <thead>
           <tr>
-            <th>Dimension</th>
+            <th>Design dimension</th>
             <th class="cmp-fa">FedAvg</th>
             <th class="cmp-fd">FedDiv</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>Aggregation rule</td>
-            <td>Size-weighted uniform average</td>
-            <td>Power-weighted by probe score (p=3, &beta;=0.4 EMA)</td>
+            <td>Aggregation weight basis</td>
+            <td>Dataset size |D<sub>i</sub>|</td>
+            <td>Probe-based expertise score div<sub>i</sub><sup>p</sup></td>
           </tr>
           <tr>
-            <td>Zero-day awareness</td>
-            <td class="val-bad">None</td>
-            <td class="val-good">Amplifies discovering client via softmax probe</td>
+            <td>Client heterogeneity model</td>
+            <td>i.i.d. assumed</td>
+            <td>Non-i.i.d. explicit — specialist vs generalist</td>
           </tr>
           <tr>
-            <td>Divergence signal</td>
-            <td class="val-bad">&mdash;</td>
-            <td class="val-good">Mean P(SQL&nbsp;|&nbsp;1,516 server held-out samples)</td>
+            <td>Server state between rounds</td>
+            <td>Global model only</td>
+            <td>Global model + EMA divergence scores + probe set</td>
           </tr>
           <tr>
-            <td>SQL injection recall (R20)</td>
-            <td class="val-bad">17%</td>
-            <td class="val-good">100%</td>
+            <td>Probe / held-out data</td>
+            <td>None required</td>
+            <td>Small labelled set on server (&le;2k samples, alarm-triggered)</td>
           </tr>
           <tr>
-            <td>SQL injection F1 (R20)</td>
-            <td class="val-bad">0.29</td>
-            <td class="val-good">0.60 <span class="cmp-badge">2.07&times;</span></td>
+            <td>Divergence measurement</td>
+            <td>Not computed</td>
+            <td>Forward pass of each client model on probe set per round</td>
           </tr>
           <tr>
-            <td>Macro F1 (R20)</td>
-            <td>0.698</td>
-            <td class="val-good">0.715</td>
+            <td>EMA smoothing</td>
+            <td>N/A</td>
+            <td>&beta;&nbsp;=&nbsp;0.4 — dampens round-to-round score variance</td>
           </tr>
           <tr>
-            <td>Overall accuracy (R20)</td>
-            <td>94.54%</td>
-            <td class="val-good">94.59%</td>
+            <td>Power parameter p</td>
+            <td>N/A</td>
+            <td>p&nbsp;=&nbsp;3 — controls concentration of weight on top scorer</td>
           </tr>
           <tr>
-            <td>Normal traffic F1</td>
-            <td class="val-good">1.00 ✓</td>
-            <td class="val-good">1.00 ✓</td>
+            <td>Training distribution</td>
+            <td>Balanced sampling throughout</td>
+            <td>Balanced pre-discovery; natural sampling post-discovery</td>
           </tr>
           <tr>
-            <td>Data heterogeneity</td>
-            <td class="val-bad">Ignored — balanced sampling throughout</td>
-            <td class="val-good">Natural sampling post-discovery exposes true distribution</td>
+            <td>EMA reset at discovery</td>
+            <td>N/A</td>
+            <td>Yes — pre-discovery scores discarded to avoid contamination</td>
           </tr>
           <tr>
-            <td>Privacy overhead</td>
-            <td>None</td>
-            <td>Minimal &mdash; server-side inference only, no raw data sharing</td>
+            <td>Server compute overhead</td>
+            <td>Aggregation only</td>
+            <td>Aggregation + n&nbsp;&times;&nbsp;one forward pass on probe set</td>
           </tr>
           <tr>
-            <td>Compute overhead</td>
-            <td>Baseline</td>
-            <td>+one forward pass on probe set per client per round</td>
+            <td>Privacy guarantee</td>
+            <td>No server data needed</td>
+            <td>Probe is server-local; client gradients / data never shared</td>
+          </tr>
+          <tr>
+            <td>Scalability to new classes</td>
+            <td>Passive — requires retraining from new data distribution</td>
+            <td>Active — swap probe set to retarget any newly discovered class</td>
           </tr>
         </tbody>
       </table>

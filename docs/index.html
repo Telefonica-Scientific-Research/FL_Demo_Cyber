@@ -128,12 +128,25 @@ nav {
   border-radius: 6px;
   padding: 3px 8px;
 }
-.nav-logo-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--border);
+.nav-credits {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
-  margin: 0 10px;
+}
+.nav-credits-label {
+  font-size: .68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.nav-credits-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255,255,255,.2);
+  flex-shrink: 0;
 }
 .nav-team-inline {
   background: rgba(255,255,255,0.93);
@@ -144,9 +157,10 @@ nav {
   flex-shrink: 0;
 }
 .nav-team-inline img {
-  height: 20px;
+  height: 18px;
   width: auto;
   display: block;
+  max-width: 90px;
 }
 
 /* ── Hero ───────────────────────────────────────────────────────── */
@@ -611,12 +625,17 @@ footer {
     <a class="nav-logo" href="#">
       <span class="dot"></span>
       FL CyberShield
-      <span class="nav-logo-sep"></span>
-      <span class="nav-team-inline">
-        <img src="assets/SC-Research-Blue-sm.png" alt="Telefónica Scientific Research">
-      </span>
     </a>
-    <span class="nav-badge">LIVE DEMO — Edge-IIoTset · 2.2M events</span>
+    <div class="nav-credits">
+      <span class="nav-credits-label">Created by</span>
+      <div class="nav-team-inline">
+        <img src="assets/telefonica-logo.svg" alt="Telefónica">
+      </div>
+      <span class="nav-credits-sep"></span>
+      <div class="nav-team-inline">
+        <img src="assets/SC-Research-Blue-sm.png" alt="Scientific Research">
+      </div>
+    </div>
   </div>
 </nav>
 
